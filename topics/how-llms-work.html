@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How LLMs Work</title>
+<meta name="description" content="The step-by-step journey from a user's text to an LLM response: chat templates, tokenization, embeddings, positions, attention, transformer layers, logits, sampling, the autoregressive loop, KV cache and stop conditions.">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-root=".." data-topic="how-llms-work">
+<main>
+<article class="content">
+
+<div class="eyebrow">Topic 2 · Foundations</div>
+<h1>How LLMs work: from your text to the model's reply</h1>
+<p class="lede">Follow a single prompt through the whole pipeline: text becomes tokens, tokens become vectors, vectors pass through dozens of transformer layers, and a probability distribution produces the next token. That step repeats until the model stops. Once you see the pipeline, things like token limits, temperature, prompt caching, <code>stop_reason</code> and "lost in the middle" make sense.</p>
+<div class="meta-row">
+  <span class="pill"><b>Why it matters</b> explains cost, latency, limits &amp; failure modes</span>
+  <span class="pill">≈ 45–60 min read</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="journey" data-nav="1. The journey at a glance" data-keywords="overview pipeline steps">1. The journey at a glance</h2>
+<p>Every request to Claude (or any decoder-only LLM) goes through these stages. The rest of the page explains each one.</p>
+<ol class="steps">
+  <li><div><b>Assemble the prompt</b><span>System prompt, tool definitions, and the conversation history are formatted into one long text sequence with role markers.</span></div></li>
+  <li><div><b>Tokenize</b><span>The text is split into sub-word pieces (tokens), and each piece is mapped to an integer ID from a fixed vocabulary.</span></div></li>
+  <li><div><b>Embed</b><span>Each token ID looks up a row in the embedding matrix and becomes a vector of thousands of numbers.</span></div></li>
+  <li><div><b>Add position</b><span>Position information is mixed in (e.g. RoPE), so the model knows token order.</span></div></li>
+  <li><div><b>Transformer layers (×N)</b><span>Each layer runs self-attention (tokens exchange information) and then an MLP (per-token processing), with residual connections. The vectors become richer at each layer.</span></div></li>
+  <li><div><b>Unembed → logits</b><span>The final vector at the <em>last</em> position is projected to one score per vocabulary token.</span></div></li>
+  <li><div><b>Softmax + sampling</b><span>Temperature, top-k and top-p shape the probabilities, and one token is picked.</span></div></li>
+  <li><div><b>Repeat (autoregression)</b><span>The new token is appended and the model runs again for the next one. A KV cache avoids recomputing earlier tokens.</span></div></li>
+  <li><div><b>Stop</b><span>Generation ends on an end-of-turn token, a stop sequence, <code>max_tokens</code>, or a tool call. That reason is the API's <code>stop_reason</code>.</span></div></li>
+  <li><div><b>Detokenize &amp; stream</b><span>Token IDs are turned back into text and streamed to you, or parsed into structured blocks such as <code>tool_use</code>.</span></div></li>
+</ol>
+<div class="callout"><span class="title">One sentence to remember</span>An LLM is a function that takes a sequence of tokens and returns a probability distribution over the <em>next</em> token. Everything else (chat, tool use, reasoning) comes from calling that function repeatedly.</div>
+
+<!-- ============================================================ -->
+<h2 id="prompt" data-nav="2. Assembling the prompt" data-keywords="chat template system prompt roles stateless messages">2. Step 1 — Assembling the prompt (chat template)</h2>
+<p>The model doesn't receive "a message". It receives <strong>one flat sequence</strong>. The API turns your structured request (system prompt, tools, <code>messages[]</code>) into that sequence using a <strong>chat template</strong>: special marker tokens that separate roles and turns.</p>
+<pre><code><span class="c"># What you send (Messages API)</span>
+system: "You are a concise geography tutor."
+messages: [ {role: "user", content: "What is the capital of France?"} ]
+
+<span class="c"># Conceptually, what the model sees (marker names are illustrative)</span>
+&lt;system&gt;You are a concise geography tutor.&lt;/system&gt;
+&lt;user&gt;What is the capital of France?&lt;/user&gt;
+&lt;assistant&gt;          <span class="c">← the model continues writing from here</span></code></pre>
+<ul>
+<li><strong>Tool definitions</strong> (name, description, JSON schema) are serialised into the prompt too. That's why tool descriptions use up tokens and strongly influence which tool is picked.</li>
+<li><strong>The model is stateless.</strong> It has no memory between API calls. Every request resends the <em>entire</em> conversation, including earlier tool results. "Memory" features (CLAUDE.md, conversation history) work by putting text back into the prompt.</li>
+<li><strong>Prefill:</strong> if you end with a partial assistant message, the model simply continues it. That's because generation is just "continue this sequence".</li>
+</ul>
+<div class="callout exam"><span class="title">🎯 Why this matters</span>Long conversations get more expensive and slower <em>every turn</em>, because the whole history is reprocessed. Hence context management, compaction, and prompt caching.</div>
+
+<!-- ============================================================ -->
+<h2 id="tokenize" data-nav="3. Tokenization" data-keywords="tokens tokenizer BPE byte pair encoding vocabulary token id">3. Step 2 — Tokenization: text → token IDs</h2>
+<p>Neural networks process numbers, not characters. A <strong>tokenizer</strong> splits text into <strong>tokens</strong> (frequent sub-word chunks) and maps each one to an integer <strong>token ID</strong> in a fixed vocabulary.</p>
+
+<h3>Worked example</h3>
+<p>The text <code>The capital of France is</code> through the public GPT-2 tokenizer (Claude uses its own tokenizer with different IDs, but the idea is identical):</p>
+<div class="toks">
+  <span class="tok">The<small>464</small></span>
+  <span class="tok"> capital<small>3139</small></span>
+  <span class="tok"> of<small>286</small></span>
+  <span class="tok"> France<small>4881</small></span>
+  <span class="tok"> is<small>318</small></span>
+</div>
+<p>Notice the <strong>leading space is part of the token</strong> (<code>" capital"</code>), and common words are a single token. Rare words get split: something like <code>"tokenization"</code> might become <code>"token" + "ization"</code>, and an unusual name might become several fragments.</p>
+
+<h3>How the vocabulary is built: Byte-Pair Encoding (BPE)</h3>
+<ol>
+<li>Start with the 256 possible <strong>bytes</strong> (UTF-8), so any text, emoji, or language can be represented. Nothing is ever "unknown".</li>
+<li>Count the most frequent adjacent pair in a huge training corpus (e.g. <code>t</code> + <code>h</code>) and merge it into a new token <code>th</code>.</li>
+<li>Repeat tens of thousands of times: <code>th</code>+<code>e</code> → <code>the</code>, <code>␣</code>+<code>the</code> → <code>␣the</code> …</li>
+<li>Stop at the target vocabulary size (typically ~32k–200k tokens). At inference time, the same merges are applied to your text.</li>
+</ol>
+
+<h3>Consequences you can observe</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Effect</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>English ≈ 3–4 characters per token. Code, JSON, and many non-English languages use more tokens per word.</td><td>The vocabulary was built mostly from frequent English patterns</td></tr>
+<tr><td>Limits and pricing are in <strong>tokens</strong> (context window, <code>max_tokens</code>, $ per million tokens)</td><td>The token is the model's unit of work</td></tr>
+<tr><td>Models can struggle to count letters ("how many r's in strawberry?") or reverse strings</td><td>The model sees <code>straw|berry</code> as chunks, not individual characters</td></tr>
+<tr><td>Arithmetic on long numbers can be shaky</td><td>Numbers are split into irregular chunks</td></tr>
+<tr><td>Different models give different token counts for the same text</td><td>Each model family has its own tokenizer. Use the API's token-counting endpoint, or <code>usage</code> in responses, for exact counts.</td></tr>
+</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="embed" data-nav="4. Embeddings (IDs → vectors)" data-keywords="embedding matrix vector d_model lookup semantic">4. Step 3 — Embeddings: token IDs → vectors</h2>
+<p>A token ID like <code>4881</code> is just an index. The model's first layer is an <strong>embedding matrix</strong> of shape <code>[vocab_size × d_model]</code>. Each token ID selects one row, and that row is the token's <strong>embedding vector</strong>.</p>
+<pre><code>vocab_size = 50,257   d_model = 768          <span class="c"># GPT-2 small (public numbers)</span>
+E = embedding matrix, shape [50257 × 768]   <span class="c"># learned during training</span>
+
+" France" → id 4881 → E[4881] = [ 0.021, -0.113, 0.487, …, 0.064 ]   <span class="c"># 768 numbers</span>
+
+Prompt of 5 tokens → matrix X of shape [5 × 768]</code></pre>
+<ul>
+<li><strong>"Embedding" and "vector" are the same thing here.</strong> An embedding <em>is</em> a vector (a list of numbers). "Tokens → embeddings → vectors" is really one step: tokens → embedding vectors.</li>
+<li>The values aren't hand-designed. They're <strong>learned in training</strong>, so tokens used in similar contexts end up with similar vectors (<code>" Paris"</code> near <code>" Lyon"</code>, <code>" king"</code> near <code>" queen"</code>).</li>
+<li>Individual dimensions usually don't mean anything readable. Meaning is spread across many dimensions.</li>
+<li>At this point each vector knows only <em>which</em> token it is, not its position or context. <code>" bank"</code> has the same starting vector in "river bank" and "bank account". The transformer layers fix that.</li>
+</ul>
+
+<h3>Real model sizes (public open models)</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Model</th><th>Vocab size</th><th>d_model (vector size)</th><th>Layers</th><th>Attention heads</th><th>Context</th></tr></thead>
+<tbody>
+<tr><td>GPT-2 small</td><td>50,257</td><td>768</td><td>12</td><td>12</td><td>1,024</td></tr>
+<tr><td>Llama 2 7B</td><td>32,000</td><td>4,096</td><td>32</td><td>32</td><td>4,096</td></tr>
+<tr><td>Llama 3 8B</td><td>128,256</td><td>4,096</td><td>32</td><td>32 (8 KV heads)</td><td>8,192</td></tr>
+</tbody></table></div>
+<p style="color:var(--muted);font-size:14px">Anthropic doesn't publish Claude's architecture details. Frontier models are far larger, with context windows of hundreds of thousands of tokens or more, but the pipeline is the same.</p>
+
+<div class="callout trap"><span class="title">⚠️ Don't confuse the two kinds of "embeddings"</span>
+<ul>
+<li><strong>Token embeddings</strong> (this step): internal to the LLM, one vector per token, the input to the transformer.</li>
+<li><strong>Text embeddings for search/RAG</strong>: a <em>separate</em> embedding model (e.g. Voyage AI) turns a whole sentence or document into <em>one</em> vector. Similar meaning gives a high cosine similarity. These vectors go in a vector database for retrieval. The LLM never sees them; it only sees the retrieved <em>text</em> placed into the prompt.</li>
+</ul></div>
+
+<!-- ============================================================ -->
+<h2 id="position" data-nav="5. Positional information" data-keywords="positional encoding RoPE rotary order">5. Step 4 — Adding position</h2>
+<p>Attention (next step) is order-blind on its own. "dog bites man" and "man bites dog" would look identical. Models inject <strong>position information</strong>:</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Method</th><th>How</th><th>Used by</th></tr></thead>
+<tbody>
+<tr><td>Sinusoidal (absolute)</td><td>Add a fixed sine/cosine pattern per position to each embedding</td><td>Original Transformer (2017)</td></tr>
+<tr><td>Learned absolute</td><td>Add a learned vector per position (position 0, 1, 2 …)</td><td>GPT-2</td></tr>
+<tr><td><strong>RoPE</strong> (rotary)</td><td>Rotate the query and key vectors by an angle proportional to position. Attention then depends on <em>relative</em> distance.</td><td>Llama and most modern LLMs</td></tr>
+</tbody></table></div>
+<p>How position is encoded also limits how long a context the model handles well. Extending context windows mostly comes down to positional-encoding tricks plus training on long documents.</p>
+
+<!-- ============================================================ -->
+<h2 id="attention" data-nav="6. Self-attention" data-keywords="attention query key value QKV softmax causal mask multi-head">6. Step 5a — Self-attention: tokens share information</h2>
+<p>Self-attention lets every token <strong>look at earlier tokens and pull in relevant information</strong>. It's how <code>" it"</code> in "The animal didn't cross the street because <u>it</u> was too tired" picks up meaning from <code>" animal"</code>.</p>
+
+<h3>Query, Key, Value</h3>
+<p>From each token's vector <code>x</code>, the layer computes three new vectors using learned weight matrices:</p>
+<ul>
+<li><strong>Query</strong> <code>q = x·W<sub>Q</sub></code>: "what am I looking for?"</li>
+<li><strong>Key</strong> <code>k = x·W<sub>K</sub></code>: "what do I contain?"</li>
+<li><strong>Value</strong> <code>v = x·W<sub>V</sub></code>: "what will I hand over if you attend to me?"</li>
+</ul>
+<pre><code>Attention(Q, K, V) = softmax( Q·Kᵀ / √d_k  +  causal_mask ) · V
+
+1. Score:     each query · every key        → how relevant is token j to token i?
+2. Scale:     ÷ √d_k                        → keeps softmax from saturating
+3. Mask:      −∞ for future positions       → token i may only see tokens ≤ i  (causal)
+4. Softmax:   scores → weights summing to 1
+5. Mix:       weighted sum of value vectors → the new information for token i</code></pre>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Attention weights for <code>" it"</code> (illustrative)</th><th>Weight</th></tr></thead>
+<tbody>
+<tr><td><code>The</code></td><td>0.02</td></tr>
+<tr><td><code> animal</code></td><td><strong>0.61</strong></td></tr>
+<tr><td><code> didn't cross</code></td><td>0.08</td></tr>
+<tr><td><code> the street</code></td><td>0.14</td></tr>
+<tr><td><code> because</code></td><td>0.05</td></tr>
+<tr><td><code> it</code> (itself)</td><td>0.10</td></tr>
+</tbody></table></div>
+
+<ul>
+<li><strong>Causal mask:</strong> a token can't attend to future tokens. That's what makes the model a <em>next-token predictor</em>, and it's why generation goes left to right.</li>
+<li><strong>Multi-head:</strong> the layer runs many attention "heads" in parallel (e.g. 32), each with its own W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub>. Different heads learn different relationships: syntax, coreference, copying, and so on. Their outputs are concatenated and projected back to <code>d_model</code>.</li>
+<li><strong>Cost:</strong> every token is compared with every earlier token, so attention compute grows <strong>quadratically</strong> with sequence length (O(n²)). Long contexts are expensive.</li>
+</ul>
+<div class="callout tip"><span class="title">💡 Connects to "lost in the middle"</span>Attention is a learned, soft weighting, not perfect lookup. In very long prompts, models tend to use information at the start and end more reliably than in the middle. That's why you put key instructions and facts at the beginning or end, under clear headers.</div>
+
+<!-- ============================================================ -->
+<h2 id="transformer" data-nav="7. Transformer block &amp; layers" data-keywords="transformer block MLP feed-forward residual stream layer norm MoE">7. Step 5b — The transformer block, stacked N times</h2>
+<figure class="diagram narrow">
+<svg viewBox="0 0 520 500" role="img" aria-label="One transformer block: input vectors, layer norm, multi-head self-attention, add residual, layer norm, MLP, add residual, output vectors; repeated N times.">
+  <defs>
+    <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker>
+    <marker id="a2a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker>
+  </defs>
+  <rect class="box-ok" x="140" y="10" width="240" height="40" rx="8"/>
+  <text x="260" y="35" text-anchor="middle" font-size="14" font-weight="600">Input vectors  [n × d]</text>
+
+  <rect class="box" x="140" y="80" width="240" height="30" rx="8"/>
+  <text x="260" y="100" text-anchor="middle" font-size="13">LayerNorm</text>
+
+  <rect class="box-accent" x="140" y="140" width="240" height="50" rx="8"/>
+  <text x="260" y="162" text-anchor="middle" font-size="14" font-weight="600">Multi-head self-attention</text>
+  <text x="260" y="180" text-anchor="middle" class="lbl">tokens exchange information</text>
+
+  <circle cx="260" cy="230" r="12" class="box"/>
+  <text x="260" y="235" text-anchor="middle" font-size="15" font-weight="700">+</text>
+
+  <rect class="box" x="140" y="265" width="240" height="30" rx="8"/>
+  <text x="260" y="285" text-anchor="middle" font-size="13">LayerNorm</text>
+
+  <rect class="box-accent" x="140" y="325" width="240" height="50" rx="8"/>
+  <text x="260" y="347" text-anchor="middle" font-size="14" font-weight="600">MLP (feed-forward)</text>
+  <text x="260" y="365" text-anchor="middle" class="lbl">per-token "thinking" / stored knowledge</text>
+
+  <circle cx="260" cy="415" r="12" class="box"/>
+  <text x="260" y="420" text-anchor="middle" font-size="15" font-weight="700">+</text>
+
+  <rect class="box-ok" x="140" y="450" width="240" height="40" rx="8"/>
+  <text x="260" y="475" text-anchor="middle" font-size="14" font-weight="600">Output vectors → next block</text>
+
+  <path class="line" d="M260,50 L260,78" marker-end="url(#a2)"/>
+  <path class="line" d="M260,110 L260,138" marker-end="url(#a2)"/>
+  <path class="line" d="M260,190 L260,216" marker-end="url(#a2)"/>
+  <path class="line" d="M260,242 L260,263" marker-end="url(#a2)"/>
+  <path class="line" d="M260,295 L260,323" marker-end="url(#a2)"/>
+  <path class="line" d="M260,375 L260,401" marker-end="url(#a2)"/>
+  <path class="line" d="M260,427 L260,448" marker-end="url(#a2)"/>
+
+  <path class="line-accent" d="M260,64 L430,64 L430,230 L274,230" marker-end="url(#a2a)"/>
+  <path class="line-accent" d="M260,252 L430,252 L430,415 L274,415" marker-end="url(#a2a)"/>
+  <text x="440" y="150" class="lbl-accent" transform="rotate(90 440 150)">residual</text>
+  <text x="440" y="335" class="lbl-accent" transform="rotate(90 440 335)">residual</text>
+
+  <path class="line" d="M110,70 L95,70 L95,430 L110,430"/>
+  <text x="80" y="255" text-anchor="middle" font-size="14" font-weight="700" transform="rotate(-90 80 255)">× N layers</text>
+</svg>
+<figcaption>A pre-norm transformer block. Real models stack dozens of these, each with its own weights.</figcaption>
+</figure>
+<ul>
+<li><strong>MLP (feed-forward network):</strong> applied to each token's vector independently. It expands to roughly 4× width, applies a non-linearity, and projects back. Most of a model's parameters, and much of its "factual knowledge", live here.</li>
+<li><strong>Residual stream:</strong> each sub-layer <em>adds</em> its output to the running vector rather than replacing it. Think of the vector as a shared workspace that every layer reads from and writes to.</li>
+<li><strong>Layer norm</strong> keeps the numbers in a stable range so deep stacks train well.</li>
+<li><strong>Depth builds meaning:</strong> early layers handle syntax and local patterns; middle and late layers handle meaning, facts, and the plan for the next token. By the last layer, the vector at the final position encodes "what should come next".</li>
+<li><strong>Mixture-of-Experts (MoE)</strong> variants replace the single MLP with many expert MLPs and a router that sends each token to a few of them. That gives more total parameters at similar compute per token.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="logits" data-nav="8. Logits &amp; probabilities" data-keywords="logits unembedding softmax probability distribution">8. Step 6 — Final vector → logits → probabilities</h2>
+<p>After the last layer, take the vector at the <strong>last position</strong> (the token right before the one being predicted). Multiply it by the <strong>unembedding matrix</strong> <code>[d_model × vocab_size]</code> to get one raw score, or <strong>logit</strong>, per vocabulary token.</p>
+<pre><code>h_last            shape [4096]
+logits = h_last · W_U          shape [vocab_size]   e.g. 128,256 scores
+probs  = softmax(logits / T)   all positive, sum to 1</code></pre>
+<p>For "The capital of France is", the top of the distribution might look like this:</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Next token</th><th>Logit</th><th>Probability (T = 1)</th></tr></thead>
+<tbody>
+<tr><td><code> Paris</code></td><td>9.0</td><td>≈ 0.87</td></tr>
+<tr><td><code> a</code></td><td>6.2</td><td>≈ 0.05</td></tr>
+<tr><td><code> the</code></td><td>5.8</td><td>≈ 0.04</td></tr>
+<tr><td><code> located</code></td><td>5.1</td><td>≈ 0.02</td></tr>
+<tr><td>… 128k others</td><td>low</td><td>tiny</td></tr>
+</tbody></table></div>
+<p>The model doesn't output an answer. It outputs a <strong>distribution</strong>. Picking from it is a separate step.</p>
+
+<!-- ============================================================ -->
+<h2 id="sampling" data-nav="9. Sampling: temperature, top-k, top-p" data-keywords="temperature top_p top_k greedy sampling deterministic">9. Step 7 — Sampling: choosing the token</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Control</th><th>What it does</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td><strong>Temperature</strong> (T)</td><td>Divide logits by T before softmax</td><td>T &lt; 1 sharpens toward the top token (focused, consistent). T &gt; 1 flattens the distribution (diverse, riskier). T → 0 ≈ greedy (always the top token).</td></tr>
+<tr><td><strong>top-k</strong></td><td>Keep only the k most likely tokens</td><td>Cuts off the long tail of unlikely tokens</td></tr>
+<tr><td><strong>top-p</strong> (nucleus)</td><td>Keep the smallest set whose cumulative probability ≥ p</td><td>Adapts to how confident the model is</td></tr>
+<tr><td>Constrained decoding</td><td>Mask out tokens that would break a grammar or JSON schema</td><td>The basis of guaranteed-structure outputs</td></tr>
+</tbody></table></div>
+
+<div class="demo" id="sampler">
+  <div class="controls">
+    <label>Temperature <input type="range" id="temp" min="0.05" max="2" step="0.05" value="1"> <output id="tempOut">1.00</output></label>
+    <label>top-p <input type="range" id="topp" min="0.1" max="1" step="0.05" value="1"> <output id="toppOut">1.00</output></label>
+    <button class="btn" id="sampleBtn" type="button">Sample next token</button>
+  </div>
+  <div style="font-size:13.5px;color:var(--muted);margin-bottom:.5rem">Prompt: <code>The capital of France is</code>. Example logits; greyed-out tokens are excluded by top-p.</div>
+  <div id="bars"></div>
+  <div class="sample-out" id="sampleOut">Click "Sample" a few times, then lower or raise the temperature.</div>
+</div>
+
+<div class="callout warn"><span class="title">Determinism caveat</span>Low temperature makes outputs <em>much</em> more consistent, but even temperature 0 isn't strictly guaranteed to be bit-for-bit identical across calls on large-scale serving infrastructure. For reliability, design for validation and retries rather than assuming identical outputs.</div>
+
+<!-- ============================================================ -->
+<h2 id="autoregressive" data-nav="10. Generation loop &amp; KV cache" data-keywords="autoregressive KV cache prefill decode TTFT latency streaming">10. Step 8 — The generation loop, KV cache, prefill vs decode</h2>
+<p>One forward pass produces <strong>one token</strong>. To write a reply, the model loops:</p>
+<pre><code>tokens = tokenize(prompt)
+<span class="k">while</span> True:
+    probs = model(tokens)[-1]          <span class="c"># distribution for the next position</span>
+    nxt   = sample(probs, T, top_p)
+    <span class="k">if</span> nxt == END_OF_TURN <span class="k">or</span> hit_stop_sequence <span class="k">or</span> len(out) == max_tokens: <span class="k">break</span>
+    tokens.append(nxt); out.append(nxt)
+    stream(detokenize(nxt))            <span class="c"># this is why responses stream word by word</span></code></pre>
+
+<h3>KV cache</h3>
+<p>The keys and values for earlier tokens don't change when a new token is added, because of the causal mask. The server <strong>caches them</strong>, so each new step only computes Q, K, and V for the single new token and attends over the cache. Without it, every step would reprocess the whole sequence.</p>
+
+<h3>Two phases with very different performance</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Phase</th><th>What happens</th><th>Determines</th></tr></thead>
+<tbody>
+<tr><td><strong>Prefill</strong></td><td>All input tokens are processed <em>in parallel</em> in one pass, and the KV cache is filled</td><td><strong>Time to first token</strong> (TTFT). Grows with prompt length.</td></tr>
+<tr><td><strong>Decode</strong></td><td>Output tokens are generated <em>one at a time</em>, sequentially</td><td><strong>Tokens per second</strong>. Total time grows with output length.</td></tr>
+</tbody></table></div>
+<ul>
+<li>This is why <strong>output tokens cost more than input tokens</strong>: each needs its own sequential pass.</li>
+<li><strong>Prompt caching</strong> stores the processed state (KV cache) of a stable <em>prefix</em> (tools, system prompt, long documents). Later requests that start with the <em>exact same prefix</em> skip that prefill work, so they're faster and the cached tokens are billed at a much lower rate. Put static content first and changing content last.</li>
+<li><strong>Extended thinking</strong> is the same loop: the model generates reasoning tokens before the answer. They're real output tokens, so they cost time and money and use up the token budget.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="stopping" data-nav="11. Stopping &amp; stop_reason" data-keywords="stop_reason end_turn max_tokens stop_sequence tool_use EOS">11. Step 9 — Stopping, and where <code>stop_reason</code> comes from</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>What happened during generation</th><th>API <code>stop_reason</code></th></tr></thead>
+<tbody>
+<tr><td>The model sampled its special end-of-turn token</td><td><code>end_turn</code></td></tr>
+<tr><td>The generated text matched one of your <code>stop_sequences</code></td><td><code>stop_sequence</code></td></tr>
+<tr><td>Output reached the <code>max_tokens</code> limit you set (text cut mid-thought)</td><td><code>max_tokens</code></td></tr>
+<tr><td>The model emitted a complete tool-call block and ended its turn</td><td><code>tool_use</code></td></tr>
+<tr><td>The prompt plus output hit the model's context window</td><td><code>model_context_window_exceeded</code></td></tr>
+</tbody></table></div>
+<p>So <code>stop_reason</code> isn't something the model "decides to say". It's the server reporting <em>which stop condition fired</em>. Your agent loop branches on it (see <a href="claude-code.html#loop">the agentic loop</a>).</p>
+
+<!-- ============================================================ -->
+<h2 id="detok" data-nav="12. Detokenize, stream &amp; tool calls" data-keywords="detokenize streaming tool_use parse JSON structured output">12. Step 10 — Detokenizing, streaming and tool calls</h2>
+<ul>
+<li><strong>Detokenization:</strong> token IDs are mapped back to their byte sequences and joined into text. Because a multi-byte character can be split across tokens, streaming clients buffer partial bytes.</li>
+<li><strong>Streaming</strong> (server-sent events) sends each chunk as it's decoded. That's purely a delivery choice; the model computes the same way either way.</li>
+<li><strong>Tool use:</strong> the model was trained to emit a special structured format when it wants a tool. The API parses that into a <code>tool_use</code> content block (<code>name</code>, <code>input</code> JSON, <code>id</code>). <strong>The model never runs anything.</strong> Your code (or Claude Code's harness) executes the tool, and the result goes back into the next prompt as a <code>tool_result</code>, which is tokenized like any other text.</li>
+<li><strong>Structured output:</strong> a schema plus constrained decoding guarantees valid <em>shape</em>. Whether the values are <em>correct</em> still depends on the model, so validate the semantics.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="example" data-nav="13. Full worked example" data-keywords="example end to end walkthrough">13. End-to-end worked example</h2>
+<p>User asks: <em>"What is the capital of France?"</em></p>
+<div class="table-wrap"><table>
+<thead><tr><th>#</th><th>Stage</th><th>Data at this point</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Chat template</td><td>One string: system text + <code>&lt;user&gt;What is the capital of France?&lt;/user&gt;&lt;assistant&gt;</code></td></tr>
+<tr><td>2</td><td>Tokenize</td><td>~20 integer IDs, e.g. <code>[…, 2061, 318, 262, 3139, 286, 4881, 30, …]</code></td></tr>
+<tr><td>3</td><td>Embed</td><td>Matrix <code>[20 × d_model]</code> of floats</td></tr>
+<tr><td>4</td><td>+ Position</td><td>Same shape, now order-aware (RoPE is applied inside attention)</td></tr>
+<tr><td>5</td><td>N transformer layers</td><td>Same shape <code>[20 × d_model]</code>, but each vector is now contextual. The last one "knows" an answer about France's capital is due.</td></tr>
+<tr><td>6</td><td>Unembed</td><td>Logits <code>[vocab_size]</code> for the next token</td></tr>
+<tr><td>7</td><td>Softmax + sample</td><td><code>"The"</code> (p≈0.6) is chosen</td></tr>
+<tr><td>8</td><td>Loop with KV cache</td><td><code>" capital"</code> → <code>" of"</code> → <code>" France"</code> → <code>" is"</code> → <code>" Paris"</code> → <code>"."</code></td></tr>
+<tr><td>9</td><td>Stop</td><td>The end-of-turn token is sampled → <code>stop_reason: "end_turn"</code></td></tr>
+<tr><td>10</td><td>Detokenize / stream</td><td>"The capital of France is Paris." with <code>usage: {input_tokens: ~20, output_tokens: 7}</code></td></tr>
+</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="training" data-nav="14. Where the weights come from" data-keywords="training pretraining fine-tuning RLHF constitutional AI next token prediction in-context learning">14. Where the weights come from (training, briefly)</h2>
+<ol>
+<li><strong>Pre-training:</strong> the model reads trillions of tokens and learns to predict the next token. The error (cross-entropy loss) is pushed back through the network (backpropagation), nudging <em>every</em> weight: embeddings, attention matrices, MLPs, unembedding. This is where language, facts, and reasoning patterns come from.</li>
+<li><strong>Post-training:</strong> supervised fine-tuning on high-quality conversations, then reinforcement learning from human and AI feedback (Anthropic uses techniques such as Constitutional AI). This turns a text predictor into a helpful, honest, harmless assistant that follows the chat format, uses tools, and knows when to stop.</li>
+<li><strong>Inference (your API call):</strong> weights are <strong>frozen</strong>. Nothing in your prompt changes the model. "Learning" from examples in the prompt (<em>in-context learning</em>, few-shot) happens only within that context window and is gone on the next call.</li>
+</ol>
+<div class="callout"><span class="title">Knowledge cutoff</span>The model only "knows" what was in its training data up to a cutoff date. Anything newer, or private, must come in through the prompt: retrieval (RAG), tool calls, MCP, or documents you attach.</div>
+
+<!-- ============================================================ -->
+<h2 id="misconceptions" data-nav="15. Misconceptions &amp; exam links" data-keywords="misconceptions myths exam">15. Common misconceptions, and how they connect to the exam</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Misconception</th><th>Reality</th><th>Practical consequence</th></tr></thead>
+<tbody>
+<tr><td>"The model reads words or characters"</td><td>It reads sub-word tokens</td><td>Budget in tokens. Expect weak letter counting.</td></tr>
+<tr><td>"It remembers our last chat"</td><td>Stateless: every call resends the full history</td><td>Persist key facts (CLAUDE.md, notes files, case-facts blocks)</td></tr>
+<tr><td>"A bigger context means it uses everything equally"</td><td>Attention is soft; the middle gets less reliable use</td><td>Put critical info at the start or end, summarise, trim tool output</td></tr>
+<tr><td>"Embeddings and vectors are separate steps"</td><td>An embedding <em>is</em> a vector</td><td>Tokens → embedding vectors → transformer</td></tr>
+<tr><td>"The LLM searches my vector DB"</td><td>Your code retrieves text; the LLM reads it as prompt tokens</td><td>Retrieval quality is a pipeline concern, not a model one</td></tr>
+<tr><td>"The model runs my tools"</td><td>It emits a <code>tool_use</code> request; your harness runs it</td><td>Validate and authorise in code (hooks, permissions)</td></tr>
+<tr><td>"Temperature 0 means perfectly deterministic"</td><td>Highly consistent, not guaranteed identical</td><td>Validate outputs, add retries</td></tr>
+<tr><td>"A JSON schema guarantees correct data"</td><td>It guarantees structure only</td><td>Add semantic validation</td></tr>
+<tr><td>"The model learns from my corrections"</td><td>Weights are frozen at inference</td><td>Put corrections in the prompt or persistent memory</td></tr>
+</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="quiz" data-nav="16. Self-check quiz" data-keywords="quiz practice questions">16. Self-check quiz</h2>
+<p class="quiz-score">Score: 0 / 0 answered (of 8)</p>
+
+<div class="quiz" data-answer="b">
+  <div class="q">1 · What is a token embedding?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. The integer ID assigned to a token</button>
+    <button class="opt" data-k="b">B. A learned vector (row of the embedding matrix) looked up by the token ID</button>
+    <button class="opt" data-k="c">C. A vector from a separate embedding model stored in a vector database</button>
+    <button class="opt" data-k="d">D. The probability of the token appearing next</button>
+  </div>
+  <div class="why"><b>B.</b> The ID is just an index (A). C describes text embeddings used for RAG, which are a separate model. D describes the output distribution.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+  <div class="q">2 · Why does a long conversation get slower and more expensive with every turn, even when your new message is short?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. The model is retrained on each message</button>
+    <button class="opt" data-k="b">B. The tokenizer slows down as the vocabulary grows</button>
+    <button class="opt" data-k="c">C. Temperature increases over time</button>
+    <button class="opt" data-k="d">D. The model is stateless, so the entire history is sent and processed as input again each call</button>
+  </div>
+  <div class="why"><b>D.</b> Every request resends the full conversation as input tokens. Prompt caching and compaction exist to reduce this cost.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+  <div class="q">3 · In self-attention, what does the causal mask do?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Prevents each token from attending to tokens that come after it</button>
+    <button class="opt" data-k="b">B. Hides the system prompt from the user</button>
+    <button class="opt" data-k="c">C. Removes low-probability tokens before sampling</button>
+    <button class="opt" data-k="d">D. Blocks harmful content</button>
+  </div>
+  <div class="why"><b>A.</b> Future positions are set to −∞ before the softmax, which makes the model a left-to-right next-token predictor. C describes top-k/top-p.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+  <div class="q">4 · You set temperature very low. What happens?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. The model uses fewer layers</button>
+    <button class="opt" data-k="b">B. The response is guaranteed factually correct</button>
+    <button class="opt" data-k="c">C. The probability distribution sharpens toward the most likely tokens, giving more consistent output</button>
+    <button class="opt" data-k="d">D. The context window shrinks</button>
+  </div>
+  <div class="why"><b>C.</b> Temperature only reshapes the softmax. The computation and the model's knowledge are unchanged, so correctness isn't guaranteed.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+  <div class="q">5 · A response ends with <code>stop_reason: "max_tokens"</code>. What does that tell you?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. The model finished its answer naturally</button>
+    <button class="opt" data-k="b">B. Generation was cut off at your output limit, so the answer is likely incomplete</button>
+    <button class="opt" data-k="c">C. The model wants to call a tool</button>
+    <button class="opt" data-k="d">D. The prompt was too long to tokenize</button>
+  </div>
+  <div class="why"><b>B.</b> The decode loop hit the <code>max_tokens</code> stop condition before the end-of-turn token was sampled.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+  <div class="q">6 · Why does prompt caching require the cached content to be at the <em>start</em> of the prompt?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. The tokenizer reads right to left</button>
+    <button class="opt" data-k="b">B. Caches only store the system prompt</button>
+    <button class="opt" data-k="c">C. Billing is calculated per message</button>
+    <button class="opt" data-k="d">D. Each token's keys and values depend on all the tokens before it, so only an identical prefix can reuse stored state</button>
+  </div>
+  <div class="why"><b>D.</b> Because of causal attention, changing an early token changes the state of every later token. An identical prefix gives identical KV state that can be reused.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+  <div class="q">7 · Why are output tokens slower and pricier than input tokens?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Input is processed in parallel during prefill; output must be generated one token at a time during decode</button>
+    <button class="opt" data-k="b">B. Output tokens are longer than input tokens</button>
+    <button class="opt" data-k="c">C. Output passes through more layers</button>
+    <button class="opt" data-k="d">D. Output is checked by a second model</button>
+  </div>
+  <div class="why"><b>A.</b> Decode is sequential, with one forward pass per token, while prefill handles the whole prompt at once.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+  <div class="q">8 · In a RAG system, how does the LLM use the vector database?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. It queries the database directly with its internal token embeddings</button>
+    <button class="opt" data-k="b">B. The stored vectors replace its embedding matrix</button>
+    <button class="opt" data-k="c">C. It doesn't. Your code retrieves similar chunks with a separate embedding model and puts the text into the prompt.</button>
+    <button class="opt" data-k="d">D. The vector database fine-tunes the model each query</button>
+  </div>
+  <div class="why"><b>C.</b> Retrieval happens outside the model. The LLM only sees the retrieved text, tokenized like the rest of the prompt.</div>
+</div>
+
+<div class="callout"><span class="title">📚 Further reading</span>"Attention Is All You Need" (Vaswani et al., 2017); Anthropic's docs on <a href="https://docs.claude.com" target="_blank" rel="noopener">tokens, prompt caching, streaming and extended thinking</a>; Anthropic's interpretability research on how features are represented inside models.</div>
+
+<nav class="pager">
+  <a href="claude-code.html">← Claude Code</a>
+  <a href="../index.html">Home →</a>
+</nav>
+<footer class="site">CCA Study Hub · personal study notes · not an official Anthropic resource</footer>
+
+</article>
+</main>
+<script>
+/* Sampling demo: softmax with temperature + top-p over example logits */
+(function () {
+  const cands = [[" Paris", 9.0], [" a", 6.2], [" the", 5.8], [" located", 5.1], [" known", 4.6], [" Lyon", 3.0], [" beautiful", 2.7]];
+  const $ = (id) => document.getElementById(id);
+  const temp = $("temp"), topp = $("topp"), bars = $("bars"), out = $("sampleOut");
+  let current = [];
+
+  function compute() {
+    const T = parseFloat(temp.value), P = parseFloat(topp.value);
+    $("tempOut").textContent = T.toFixed(2);
+    $("toppOut").textContent = P.toFixed(2);
+    const scaled = cands.map(([t, l]) => [t, l / T]);
+    const max = Math.max(...scaled.map(s => s[1]));
+    const exps = scaled.map(([t, s]) => [t, Math.exp(s - max)]);
+    const sum = exps.reduce((a, [, e]) => a + e, 0);
+    const probs = exps.map(([t, e]) => ({ t, p: e / sum })).sort((a, b) => b.p - a.p);
+    let cum = 0;
+    probs.forEach(o => { o.keep = cum < P; cum += o.p; });   // nucleus: smallest set reaching P
+    const keptSum = probs.filter(o => o.keep).reduce((a, o) => a + o.p, 0);
+    probs.forEach(o => { o.final = o.keep ? o.p / keptSum : 0; });
+    current = probs;
+    bars.innerHTML = probs.map(o => `
+      <div class="bar-row ${o.keep ? "" : "cut"}">
+        <span class="lbl">"${o.t}"</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${(o.final * 100).toFixed(1)}%"></div></div>
+        <span class="pct">${(o.final * 100).toFixed(1)}%</span>
+      </div>`).join("");
+  }
+
+  $("sampleBtn").addEventListener("click", () => {
+    let r = Math.random(), pick = current[0];
+    for (const o of current) { if (!o.keep) continue; r -= o.final; if (r <= 0) { pick = o; break; } }
+    out.innerHTML = `Sampled: <code>The capital of France is${pick.t}</code> (p = ${(pick.final * 100).toFixed(1)}%)`;
+  });
+  temp.addEventListener("input", compute);
+  topp.addEventListener("input", compute);
+  compute();
+})();
+</script>
+<script src="../assets/site.js"></script>
+</body>
+</html>

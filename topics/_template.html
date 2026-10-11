@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Topic Title</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<!-- data-topic must match the id in TOPICS (assets/site.js) -->
+<body data-root=".." data-topic="your-topic-id">
+<main>
+<article class="content">
+
+<div class="eyebrow">Topic N · Domain DX</div>
+<h1>Topic title</h1>
+<p class="lede">One-paragraph summary of the topic.</p>
+
+<!-- Each <h2 id="..."> becomes a menu entry. data-nav = short menu label, data-keywords = extra search terms. -->
+<h2 id="first-section" data-nav="1. First section" data-keywords="extra search words">1. First section</h2>
+<p>Content…</p>
+
+<div class="callout exam"><span class="title">🎯 Exam lens</span>What the exam tests here.</div>
+<div class="callout trap"><span class="title">⚠️ Trap</span>Common distractor.</div>
+<div class="callout tip"><span class="title">💡 Tip</span>Helpful note.</div>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>Col</th><th>Col</th></tr></thead>
+  <tbody><tr><td>…</td><td>…</td></tr></tbody>
+</table></div>
+
+<pre><code>code sample</code></pre>
+
+<h2 id="quiz" data-nav="Self-check quiz">Self-check quiz</h2>
+<p class="quiz-score">Score: 0 / 0 answered</p>
+<div class="quiz" data-answer="b">
+  <div class="q">1 · Question text?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. …</button>
+    <button class="opt" data-k="b">B. …</button>
+    <button class="opt" data-k="c">C. …</button>
+    <button class="opt" data-k="d">D. …</button>
+  </div>
+  <div class="why"><b>B.</b> Explanation.</div>
+</div>
+
+<nav class="pager"><a href="../index.html">← Home</a></nav>
+</article>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

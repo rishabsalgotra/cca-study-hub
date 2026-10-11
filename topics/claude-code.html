@@ -1,0 +1,812 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code Deep Dive</title>
+<meta name="description" content="Claude Code for the Claude Certified Architect – Foundations exam: agentic loop, stop_reason, CLAUDE.md, settings, permissions, skills, subagents, hooks, MCP, headless/CI, sessions and the Agent SDK.">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-root=".." data-topic="claude-code">
+<main>
+<article class="content">
+
+<div class="eyebrow">Topic 1 · Domains D1, D2, D5</div>
+<h1>Claude Code — the complete architect's guide</h1>
+<p class="lede">Claude Code is an agentic coding harness: a model running in a loop, with tools, permissions, memory and extension points around it. The exam tests whether you know <em>which</em> extension point solves a given problem and <em>why</em>.</p>
+<div class="meta-row">
+  <span class="pill"><b>D1</b> Agentic architecture 27%</span>
+  <span class="pill"><b>D2</b> Claude Code config &amp; workflows 20%</span>
+  <span class="pill"><b>D5</b> Context &amp; reliability 15%</span>
+  <span class="pill">≈ 60–90 min read</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="overview" data-nav="1. What Claude Code is">1. What Claude Code is (mental model)</h2>
+<p>Claude Code wraps a Claude model in a <strong>harness</strong>. The model decides what to do. The harness carries it out: it runs tools, enforces permissions, loads memory, fires hooks, and manages context.</p>
+<div class="grid">
+  <div class="card"><h4>🧠 Model</h4><p>Reasons, plans, and emits <code>tool_use</code> blocks. It never touches your machine directly.</p></div>
+  <div class="card"><h4>🔁 Loop</h4><p>Calls the model, runs the requested tools, feeds results back, and repeats until <code>stop_reason</code> is <code>end_turn</code>.</p></div>
+  <div class="card"><h4>🧰 Tools</h4><p>Read, Edit, Write, Bash, Grep, Glob, WebFetch, Agent… plus any MCP tools.</p></div>
+  <div class="card"><h4>📜 Context</h4><p>System prompt, CLAUDE.md memory, skill descriptions, conversation, and tool results — all within one context window.</p></div>
+  <div class="card"><h4>🛡 Guardrails</h4><p>Permission rules and modes, hooks, managed settings, sandboxing.</p></div>
+  <div class="card"><h4>🧩 Extensions</h4><p>Skills, slash commands, subagents, hooks, MCP servers, plugins.</p></div>
+</div>
+<h3>Where it runs</h3>
+<ul>
+  <li><strong>Terminal CLI</strong> (<code>claude</code>): the interactive REPL, or headless with <code>claude -p</code>.</li>
+  <li><strong>IDE extensions</strong>: VS Code (and forks), JetBrains. They share the CLI's config.</li>
+  <li><strong>Desktop app</strong> and <strong>web</strong> (claude.ai/code): cloud sessions in a sandbox.</li>
+  <li><strong>CI/CD</strong>: GitHub Actions (<code>anthropics/claude-code-action</code>), GitLab, or any pipeline through <code>claude -p</code>.</li>
+  <li><strong>Claude Agent SDK</strong> (Python / TypeScript): the same harness, used as a library to build your own agents.</li>
+</ul>
+<p>The same configuration files (<code>CLAUDE.md</code>, <code>.claude/settings.json</code>, <code>.claude/skills</code>, <code>.claude/agents</code>, <code>.mcp.json</code>) apply on every surface.</p>
+<div class="callout exam"><span class="title">🎯 Exam lens</span>
+Most D2 questions read as "a team wants X — what's the <em>best</em> mechanism?" Match the problem to the tool:
+<strong>always-on knowledge → CLAUDE.md</strong>, <strong>on-demand procedure → skill</strong>, <strong>isolated context / parallel work → subagent</strong>, <strong>must-happen-every-time → hook</strong>, <strong>external system → MCP</strong>, <strong>allow/deny actions → permissions</strong>.</div>
+
+<!-- ============================================================ -->
+<h2 id="loop" data-nav="2. Agentic loop &amp; stop_reason" data-keywords="stop_reason end_turn tool_use max_tokens pause_turn refusal loop">2. The agentic loop &amp; <code>stop_reason</code></h2>
+<p>Every agent, Claude Code included, comes down to the same loop on the Messages API. The model replies with content blocks plus a <code>stop_reason</code> field that says <em>why it stopped generating</em>. <strong>Your code decides whether to loop by reading <code>stop_reason</code>, not by reading the text.</strong></p>
+
+<figure class="diagram">
+<svg viewBox="0 0 760 270" role="img" aria-label="Agentic loop: prompt goes to the model; if stop_reason is tool_use, execute tools and append tool_result, then call the model again; if end_turn, return the answer.">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker>
+    <marker id="ara" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker>
+  </defs>
+  <rect class="box" x="10" y="100" width="130" height="56" rx="10"/>
+  <text x="75" y="124" text-anchor="middle" font-size="14" font-weight="600">User task</text>
+  <text x="75" y="143" text-anchor="middle" class="lbl">messages[]</text>
+
+  <rect class="box-accent" x="185" y="100" width="150" height="56" rx="10"/>
+  <text x="260" y="124" text-anchor="middle" font-size="14" font-weight="600">Call the model</text>
+  <text x="260" y="143" text-anchor="middle" class="lbl">messages.create()</text>
+
+  <polygon class="box" points="440,88 515,128 440,168 365,128"/>
+  <text x="440" y="125" text-anchor="middle" font-size="13" font-weight="600">stop_reason</text>
+  <text x="440" y="141" text-anchor="middle" class="lbl">= ?</text>
+
+  <rect class="box-ok" x="580" y="20" width="165" height="56" rx="10"/>
+  <text x="662" y="44" text-anchor="middle" font-size="14" font-weight="600">Done</text>
+  <text x="662" y="63" text-anchor="middle" class="lbl">return final text</text>
+
+  <rect class="box" x="580" y="180" width="165" height="56" rx="10"/>
+  <text x="662" y="204" text-anchor="middle" font-size="14" font-weight="600">Run the tools</text>
+  <text x="662" y="223" text-anchor="middle" class="lbl">harness runs tool_use</text>
+
+  <path class="line" d="M140,128 L183,128" marker-end="url(#ar)"/>
+  <path class="line" d="M335,128 L363,128" marker-end="url(#ar)"/>
+  <path class="line" d="M480,107 L520,48 L578,48" marker-end="url(#ar)"/>
+  <text x="508" y="40" class="lbl">end_turn</text>
+  <path class="line-accent" d="M480,149 L520,208 L578,208" marker-end="url(#ara)"/>
+  <text x="526" y="190" class="lbl-accent">tool_use</text>
+  <path class="line-accent" d="M662,236 L662,258 L260,258 L260,158" marker-end="url(#ara)"/>
+  <text x="440" y="250" text-anchor="middle" class="lbl-accent">append assistant msg + tool_result → loop</text>
+</svg>
+<figcaption>The loop continues while <code>stop_reason == "tool_use"</code> and ends on <code>end_turn</code>.</figcaption>
+</figure>
+
+<h3>Every <code>stop_reason</code> value</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>stop_reason</th><th>Meaning</th><th>What your loop should do</th></tr></thead>
+<tbody>
+<tr><td><code>end_turn</code></td><td>The model finished its turn naturally.</td><td><strong>Stop.</strong> Return the final answer.</td></tr>
+<tr><td><code>tool_use</code></td><td>The model wants one or more tools run.</td><td>Run <em>every</em> <code>tool_use</code> block. Send all results back in <strong>one</strong> user message as <code>tool_result</code> blocks with matching <code>tool_use_id</code>. Call the model again.</td></tr>
+<tr><td><code>max_tokens</code></td><td>The output hit your <code>max_tokens</code> cap. The response is <strong>truncated</strong>.</td><td>Don't treat it as complete. Raise <code>max_tokens</code> or ask the model to continue. A cut-off <code>tool_use</code> block is invalid.</td></tr>
+<tr><td><code>stop_sequence</code></td><td>The output matched one of your custom <code>stop_sequences</code>.</td><td>Read <code>response.stop_sequence</code> and handle it in your application.</td></tr>
+<tr><td><code>pause_turn</code></td><td>The API paused a long-running turn (usually with server tools such as web search).</td><td>Send the response back unchanged as the assistant turn so the model can continue.</td></tr>
+<tr><td><code>refusal</code></td><td>The model declined for safety reasons.</td><td>Don't retry blindly. Surface it, or route to a human.</td></tr>
+<tr><td><code>model_context_window_exceeded</code></td><td>The conversation hit the model's context window limit.</td><td>Compact, summarise, or trim the history, then continue.</td></tr>
+</tbody></table></div>
+
+<h3>Minimal correct loop (Python)</h3>
+<pre><code><span class="k">import</span> anthropic
+client = anthropic.Anthropic()
+messages = [{"role": "user", "content": task}]
+
+<span class="k">while</span> True:
+    resp = client.messages.create(
+        model="claude-sonnet-5-5", max_tokens=4096,
+        tools=TOOLS, messages=messages,
+    )
+    messages.append({"role": "assistant", "content": resp.content})  <span class="c"># keep full history</span>
+
+    <span class="k">if</span> resp.stop_reason == "tool_use":
+        results = []
+        <span class="k">for</span> block <span class="k">in</span> resp.content:
+            <span class="k">if</span> block.type == "tool_use":
+                <span class="k">try</span>:
+                    out = run_tool(block.name, block.input)
+                    results.append({"type": "tool_result", "tool_use_id": block.id, "content": out})
+                <span class="k">except</span> ToolError <span class="k">as</span> e:                           <span class="c"># structured error, not a crash</span>
+                    results.append({"type": "tool_result", "tool_use_id": block.id,
+                                    "content": str(e), "is_error": True})
+        messages.append({"role": "user", "content": results})       <span class="c"># ALL results in ONE message</span>
+        <span class="k">continue</span>
+
+    <span class="k">if</span> resp.stop_reason == "max_tokens":
+        <span class="k">raise</span> TruncatedResponse()                                   <span class="c"># or continue with a higher cap</span>
+    <span class="k">break</span>                                                          <span class="c"># end_turn / stop_sequence / refusal</span>
+</code></pre>
+
+<div class="callout trap"><span class="title">⚠️ Classic loop anti-patterns (distractor fodder)</span>
+<ul>
+<li><strong>Parsing text</strong> to decide when to stop (e.g. looking for "DONE" or "I have completed"). Use <code>stop_reason</code>.</li>
+<li><strong>A fixed iteration cap as the main stop condition</strong>. <code>max_turns</code> is a safety net, not the control logic.</li>
+<li><strong>Stopping when the response contains text</strong>. A <code>tool_use</code> response can contain text <em>and</em> tool calls.</li>
+<li><strong>Dropping the assistant message</strong> before appending <code>tool_result</code>. Every result must follow the assistant turn that contains its <code>tool_use</code>.</li>
+<li><strong>Running only the first tool_use</strong> when the model asked for several in parallel.</li>
+</ul></div>
+
+<h3>Claude Code's own loop</h3>
+<p>Inside Claude Code the loop works in three phases: <strong>gather context → take action → verify results</strong>, repeated until done. The harness adds behaviour <em>between</em> iterations: permission checks before each tool call, PreToolUse/PostToolUse hooks around it, a Stop hook when the model tries to end, and auto-compaction as the window fills.</p>
+
+<h3>Related: <code>tool_choice</code></h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Value</th><th>Behaviour</th><th>Use when</th></tr></thead>
+<tbody>
+<tr><td><code>{"type":"auto"}</code></td><td>The model decides whether to call a tool (default with tools).</td><td>Normal agent loops.</td></tr>
+<tr><td><code>{"type":"any"}</code></td><td>The model <em>must</em> call some tool, and picks which.</td><td>You need structured output, but the right schema varies by input.</td></tr>
+<tr><td><code>{"type":"tool","name":"x"}</code></td><td>Forces that specific tool.</td><td>Guaranteed structured extraction with one schema, or a mandatory first step.</td></tr>
+<tr><td><code>{"type":"none"}</code></td><td>No tool calls allowed.</td><td>A final text-only answer.</td></tr>
+</tbody></table></div>
+<div class="callout tip"><span class="title">💡 Remember</span>A JSON schema (through tool input or <code>--json-schema</code>) guarantees <em>shape</em>, not <em>correctness</em>. You still need semantic validation, such as "do line items add up to the total?", with a retry that tells the model the specific error.</div>
+
+<!-- ============================================================ -->
+<h2 id="tools" data-nav="3. Built-in tools" data-keywords="Read Edit Write Bash Grep Glob WebFetch Agent Task TodoWrite">3. Built-in tools</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Tool</th><th>Purpose</th><th>Exam-relevant notes</th></tr></thead>
+<tbody>
+<tr><td><code>Read</code></td><td>Read files (text, images, PDFs, notebooks)</td><td>Read-only, so no permission prompt. Large files are read in ranges.</td></tr>
+<tr><td><code>Write</code></td><td>Create or overwrite a whole file</td><td>An existing file must be Read first.</td></tr>
+<tr><td><code>Edit</code></td><td>Exact string replacement</td><td><code>old_string</code> must be <strong>unique</strong>. If the match isn't unique, add surrounding context or fall back to Read + Write.</td></tr>
+<tr><td><code>Glob</code></td><td>Find files by <strong>name pattern</strong> (<code>**/*.test.ts</code>)</td><td>Use it to find files by path or name.</td></tr>
+<tr><td><code>Grep</code></td><td>Search file <strong>contents</strong> (ripgrep)</td><td>Use it to find callers, definitions, or error strings.</td></tr>
+<tr><td><code>Bash</code></td><td>Run shell commands</td><td>Gated by permission rules like <code>Bash(npm test:*)</code>. Can run in the background.</td></tr>
+<tr><td><code>WebFetch</code> / <code>WebSearch</code></td><td>Fetch a URL or search the web</td><td>Domain rules: <code>WebFetch(domain:docs.example.com)</code>.</td></tr>
+<tr><td><code>Agent</code> (formerly <code>Task</code>)</td><td>Spawn a subagent</td><td>The subagent gets a fresh, isolated context. Several Agent calls in one turn run in parallel.</td></tr>
+<tr><td><code>TodoWrite</code></td><td>Maintain a task checklist</td><td>Keeps multi-step work on track.</td></tr>
+<tr><td><code>NotebookEdit</code></td><td>Edit Jupyter cells</td><td></td></tr>
+<tr><td><code>Skill</code></td><td>Invoke a skill</td><td>The model can call it on its own, based on the skill's <code>description</code>.</td></tr>
+<tr><td><code>mcp__&lt;server&gt;__&lt;tool&gt;</code></td><td>Tools from MCP servers</td><td>Named like <code>mcp__github__create_issue</code>. Permission rules can target them.</td></tr>
+</tbody></table></div>
+<div class="callout exam"><span class="title">🎯 Exam lens</span>"Find every place that calls <code>processRefund</code>" → <strong>Grep</strong>. "Find all test files" → <strong>Glob</strong>. Build understanding incrementally (Grep for entry points, then Read the specific files) rather than reading the whole codebase up front.</div>
+
+<!-- ============================================================ -->
+<h2 id="memory" data-nav="4. CLAUDE.md memory" data-keywords="CLAUDE.md memory rules import hierarchy init">4. CLAUDE.md — project memory</h2>
+<p>CLAUDE.md files are <strong>instructions loaded into context automatically</strong> at session start. Use them for things Claude should <em>always</em> know: build and test commands, conventions, architecture notes, and things it must never do.</p>
+
+<h3>The hierarchy</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Level</th><th>Location</th><th>Shared via git?</th><th>Use for</th></tr></thead>
+<tbody>
+<tr><td>Enterprise / managed</td><td>OS-level managed policy path (set by IT)</td><td>Org-wide</td><td>Company standards that apply to everyone</td></tr>
+<tr><td><strong>User</strong></td><td><code>~/.claude/CLAUDE.md</code></td><td>❌ personal</td><td>Your preferences in every project</td></tr>
+<tr><td><strong>Project</strong></td><td><code>./CLAUDE.md</code> or <code>./.claude/CLAUDE.md</code></td><td>✅ committed</td><td>Team conventions, commands, architecture</td></tr>
+<tr><td>Project-local</td><td><code>./CLAUDE.local.md</code></td><td>❌ gitignored</td><td>Your personal notes for this repo</td></tr>
+<tr><td>Subdirectory</td><td><code>./packages/api/CLAUDE.md</code></td><td>✅</td><td>Loaded <strong>on demand</strong> when Claude works with files in that directory</td></tr>
+</tbody></table></div>
+<p>Files <em>above</em> the working directory (walking up to root) load at startup. Files in <em>subdirectories</em> load lazily when Claude reads files there. More specific instructions take precedence when they conflict.</p>
+
+<h3>Imports and modular rules</h3>
+<pre><code><span class="c"># CLAUDE.md</span>
+See @README.md for an overview and @package.json for npm scripts.
+
+<span class="c">## Conventions</span>
+- Use pnpm, never npm.
+- Run `pnpm test --filter &lt;pkg&gt;` before committing.
+- @docs/api-conventions.md
+- @~/.claude/my-personal-prefs.md      <span class="c"># imports can point to home dir</span></code></pre>
+<ul>
+<li><code>@path</code> imports pull other files in. They resolve recursively up to <strong>4 hops</strong> deep, and aren't evaluated inside code spans or blocks.</li>
+<li><strong><code>.claude/rules/*.md</code></strong> holds modular rule files. Add <code>paths:</code> frontmatter to scope a rule so it loads only when Claude touches matching files:</li>
+</ul>
+<pre><code>---
+paths:
+  - "src/api/**/*.ts"
+  - "**/*.test.ts"
+---
+- All API handlers must validate input with zod.
+- Tests use vitest; never import from jest.</code></pre>
+
+<h3>Commands for memory</h3>
+<ul>
+<li><code>/init</code>: analyse the repo and generate a starter CLAUDE.md.</li>
+<li><code>/memory</code>: open and edit the loaded memory files, and see which ones are active.</li>
+</ul>
+<div class="callout trap"><span class="title">⚠️ Traps</span>
+<ul>
+<li>"A new teammate doesn't get the instructions" → they were in <code>~/.claude/CLAUDE.md</code> or <code>CLAUDE.local.md</code> (personal), not the committed project <code>CLAUDE.md</code>.</li>
+<li>CLAUDE.md is <strong>advisory</strong>: it's text in the prompt. If something must happen every time (formatting, blocking a command), use a <strong>hook</strong> or a <strong>permission rule</strong>.</li>
+<li>Keep it concise. A bloated CLAUDE.md wastes context on every turn. Move rarely-needed procedures into <strong>skills</strong> and directory-specific rules into <code>.claude/rules/</code> with <code>paths:</code>.</li>
+</ul></div>
+
+<!-- ============================================================ -->
+<h2 id="settings" data-nav="5. Settings, permissions, modes" data-keywords="settings.json permissions allow deny ask defaultMode plan acceptEdits bypassPermissions managed precedence">5. Settings, permissions &amp; permission modes</h2>
+<h3>Settings files and precedence (highest wins)</h3>
+<ol class="precedence">
+<li><div><strong>Managed settings</strong> (<code>managed-settings.json</code>, deployed by IT or MDM). <strong>Can't be overridden.</strong></div></li>
+<li><div><strong>Command-line arguments</strong> (<code>--permission-mode</code>, <code>--allowedTools</code>, <code>--model</code>…), for this session only</div></li>
+<li><div><strong>Local project</strong> <code>.claude/settings.local.json</code>: personal, gitignored</div></li>
+<li><div><strong>Shared project</strong> <code>.claude/settings.json</code>: committed for the team</div></li>
+<li><div><strong>User</strong> <code>~/.claude/settings.json</code>: your defaults in every project</div></li>
+</ol>
+<p>Permission arrays (<code>allow</code>/<code>deny</code>) are <em>merged</em> across levels. A <code>deny</code> anywhere wins.</p>
+
+<h3>A realistic <code>.claude/settings.json</code></h3>
+<pre><code>{
+  "permissions": {
+    "allow": [
+      "Bash(npm run test:*)",
+      "Bash(npm run lint)",
+      "Read(./src/**)",
+      "mcp__github__get_issue"
+    ],
+    "ask":   ["Bash(git push:*)"],
+    "deny":  [
+      "Read(./.env)", "Read(./.env.*)", "Read(./secrets/**)",
+      "Bash(curl:*)", "Bash(rm -rf:*)"
+    ],
+    "defaultMode": "default",
+    "additionalDirectories": ["../shared-lib"]
+  },
+  "env": { "NODE_ENV": "development" },
+  "hooks": { "...": "see Hooks section" },
+  "enabledPlugins": {}
+}</code></pre>
+
+<h3>Permission rule syntax</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Rule</th><th>Matches</th></tr></thead>
+<tbody>
+<tr><td><code>Bash</code></td><td>Any bash command</td></tr>
+<tr><td><code>Bash(npm run test:*)</code></td><td>Commands starting with <code>npm run test</code> (prefix match)</td></tr>
+<tr><td><code>Read(./.env)</code> / <code>Edit(src/**)</code></td><td>File paths (gitignore-style globs)</td></tr>
+<tr><td><code>WebFetch(domain:example.com)</code></td><td>Fetches to that domain</td></tr>
+<tr><td><code>mcp__github</code> / <code>mcp__github__*</code></td><td>All tools from the <code>github</code> MCP server</td></tr>
+<tr><td><code>Agent(Explore)</code></td><td>A specific subagent type</td></tr>
+</tbody></table></div>
+<p><strong>Evaluation order:</strong> <code>deny</code> → <code>ask</code> → <code>allow</code>. The first matching category decides. Anything unmatched falls back to the current permission mode.</p>
+
+<h3>Permission modes (cycle with <kbd>Shift</kbd>+<kbd>Tab</kbd>)</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Mode</th><th>Behaviour</th><th>Typical use</th></tr></thead>
+<tbody>
+<tr><td><code>default</code></td><td>Prompts the first time each tool or command is used</td><td>Normal interactive work</td></tr>
+<tr><td><code>acceptEdits</code></td><td>Auto-approves file edits. Still asks for risky bash.</td><td>Trusted refactors you're watching</td></tr>
+<tr><td><code>plan</code></td><td><strong>Read-only</strong>: Claude explores and proposes a plan without editing</td><td>Complex or unfamiliar changes; review the approach first</td></tr>
+<tr><td><code>auto</code></td><td>A classifier approves routine actions and blocks risky ones</td><td>Long autonomous runs with a safety net (newer; availability varies)</td></tr>
+<tr><td><code>dontAsk</code></td><td>Denies anything not pre-approved, without prompting</td><td>Locked-down, non-interactive runs</td></tr>
+<tr><td><code>bypassPermissions</code></td><td>Skips all prompts (<code>--dangerously-skip-permissions</code>)</td><td>Only in isolated containers or VMs</td></tr>
+</tbody></table></div>
+<div class="callout exam"><span class="title">🎯 Exam lens</span>"Never let Claude read <code>.env</code> in this repo, for everyone" → <code>deny</code> rule in the committed <code>.claude/settings.json</code> (or managed settings for the whole org). <strong>Not</strong> a line in CLAUDE.md, and <strong>not</strong> <code>settings.local.json</code> (personal).</div>
+
+<!-- ============================================================ -->
+<h2 id="commands" data-nav="6. Slash commands &amp; shortcuts" data-keywords="slash commands /init /compact /clear /context /cost /model /agents /hooks /mcp /rewind keyboard shortcuts">6. Built-in slash commands &amp; keyboard shortcuts</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Command</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>/init</code></td><td>Generate a CLAUDE.md for the project</td></tr>
+<tr><td><code>/memory</code></td><td>View and edit loaded memory files</td></tr>
+<tr><td><code>/clear</code></td><td>Wipe the conversation and start fresh (use between unrelated tasks)</td></tr>
+<tr><td><code>/compact [focus]</code></td><td>Summarise history to free context, optionally with what to keep (<code>/compact keep the API decisions</code>)</td></tr>
+<tr><td><code>/context</code></td><td>Visualise context-window usage by category</td></tr>
+<tr><td><code>/cost</code>, <code>/usage</code></td><td>Token and cost usage, plan limits</td></tr>
+<tr><td><code>/model</code></td><td>Switch model (e.g. Opus for planning, Sonnet for execution)</td></tr>
+<tr><td><code>/permissions</code></td><td>View and edit allow/ask/deny rules</td></tr>
+<tr><td><code>/hooks</code></td><td>Manage hook configuration</td></tr>
+<tr><td><code>/agents</code></td><td>Create and manage subagents</td></tr>
+<tr><td><code>/mcp</code></td><td>MCP server status, OAuth authentication</td></tr>
+<tr><td><code>/plugin</code></td><td>Browse and install plugins and marketplaces</td></tr>
+<tr><td><code>/resume</code></td><td>Pick a previous session to resume</td></tr>
+<tr><td><code>/rewind</code></td><td>Roll back to a checkpoint (code and/or conversation)</td></tr>
+<tr><td><code>/review</code>, <code>/security-review</code></td><td>Review code changes, or audit them for vulnerabilities</td></tr>
+<tr><td><code>/add-dir</code></td><td>Add another working directory</td></tr>
+<tr><td><code>/config</code>, <code>/status</code>, <code>/doctor</code></td><td>Settings UI, session status, installation health check</td></tr>
+<tr><td><code>/install-github-app</code></td><td>Set up the GitHub Action and app for <code>@claude</code> in PRs and issues</td></tr>
+<tr><td><code>/export</code></td><td>Export the conversation</td></tr>
+<tr><td><code>/help</code></td><td>List all commands, including your custom skills</td></tr>
+</tbody></table></div>
+
+<h3>Keyboard &amp; input shortcuts</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Input</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td><kbd>Shift</kbd>+<kbd>Tab</kbd></td><td>Cycle permission modes (default → acceptEdits → plan …)</td></tr>
+<tr><td><kbd>Esc</kbd></td><td>Interrupt Claude mid-action (context is kept)</td></tr>
+<tr><td><kbd>Esc</kbd> <kbd>Esc</kbd></td><td>Open rewind: jump back to an earlier message or checkpoint</td></tr>
+<tr><td><code>@path/to/file</code></td><td>Mention a file or folder to pull it into context</td></tr>
+<tr><td><code>!command</code></td><td>Bash mode: run a shell command directly, with output added to context</td></tr>
+<tr><td><code>/</code></td><td>Slash-command and skill menu</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Cancel input / exit</td></tr>
+<tr><td><kbd>\</kbd>+<kbd>Enter</kbd> or <kbd>Shift</kbd>+<kbd>Enter</kbd></td><td>Newline in the prompt (after <code>/terminal-setup</code>)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd></td><td>Send a running command or agent to the background</td></tr>
+</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="skills" data-nav="7. Skills &amp; custom commands" data-keywords="SKILL.md skills custom commands frontmatter context fork allowed-tools ARGUMENTS">7. Skills &amp; custom slash commands</h2>
+<p>A <strong>skill</strong> is a folder with a <code>SKILL.md</code>: reusable instructions (and optional scripts or reference files) that load <strong>only when needed</strong>. Custom slash commands (<code>.claude/commands/*.md</code>) have been <strong>merged into skills</strong>. Both create a <code>/name</code> command, and old command files still work.</p>
+
+<h3>Locations</h3>
+<ul>
+<li><code>.claude/skills/&lt;name&gt;/SKILL.md</code>: <strong>project</strong>, committed, shared with the team</li>
+<li><code>~/.claude/skills/&lt;name&gt;/SKILL.md</code>: <strong>personal</strong>, available in all projects</li>
+<li>Plugins can ship skills too (namespaced <code>plugin:skill</code>)</li>
+</ul>
+
+<h3>Anatomy</h3>
+<pre><code>.claude/skills/review-pr/
+├── SKILL.md            <span class="c"># required</span>
+├── checklist.md        <span class="c"># loaded only if SKILL.md references it</span>
+└── scripts/diff.sh     <span class="c"># can be executed by the skill</span>
+
+<span class="c"># SKILL.md</span>
+---
+name: review-pr
+description: Review a pull request for correctness and security. Use when the user asks to review a PR.
+argument-hint: [pr-number]
+allowed-tools: Read, Grep, Glob, Bash(gh pr diff:*)
+context: fork               <span class="c"># run in an isolated subagent context</span>
+disable-model-invocation: true   <span class="c"># only the user can trigger it via /review-pr</span>
+---
+Review PR #$ARGUMENTS.
+1. Run `gh pr diff $ARGUMENTS`.
+2. Check against @checklist.md.
+3. Report findings as: file:line — severity — issue — fix.</code></pre>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Frontmatter</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td><code>name</code>, <code>description</code></td><td>The description is what the model uses to decide <em>when</em> to auto-invoke. Make it specific.</td></tr>
+<tr><td><code>allowed-tools</code></td><td>Tools pre-approved while the skill runs (restricts or expands what it can do without prompting)</td></tr>
+<tr><td><code>argument-hint</code></td><td>Autocomplete hint. The arguments arrive in <code>$ARGUMENTS</code>.</td></tr>
+<tr><td><code>context: fork</code></td><td>Runs in a <strong>separate subagent context</strong>, so verbose output doesn't pollute the main conversation</td></tr>
+<tr><td><code>disable-model-invocation</code></td><td>The model can't trigger it on its own; the user must type <code>/name</code></td></tr>
+<tr><td><code>model</code></td><td>Override the model for this skill</td></tr>
+</tbody></table></div>
+<div class="callout tip"><span class="title">💡 Progressive disclosure</span>At startup only each skill's <strong>name and description</strong> sit in context. The body loads when the skill is invoked, and referenced files load only if needed. That's why skills scale better than piling everything into CLAUDE.md.</div>
+
+<!-- ============================================================ -->
+<h2 id="subagents" data-nav="8. Subagents" data-keywords="subagents agents Agent Task tool isolated context parallel Explore Plan coordinator">8. Subagents &amp; orchestration</h2>
+<p>A subagent is a separate Claude instance with its <strong>own context window</strong>, its own system prompt, and a restricted tool set. The main agent delegates through the <code>Agent</code> tool and gets back <strong>only the final result</strong>.</p>
+
+<h3>Defining one</h3>
+<pre><code><span class="c"># .claude/agents/security-reviewer.md   (project)  or  ~/.claude/agents/ (personal)</span>
+---
+name: security-reviewer
+description: Reviews diffs for injection, authz and secrets issues. Use proactively after changes to auth or payment code.
+tools: Read, Grep, Glob          <span class="c"># least privilege — read-only</span>
+model: sonnet                    <span class="c"># sonnet | opus | haiku | inherit</span>
+---
+You are a senior application-security reviewer.
+Return findings as JSON: [{file, line, severity, issue, fix}].
+Report only issues you can point to in code.</code></pre>
+<p>Other ways to define them: <code>/agents</code> (interactive), <code>claude --agents '{...json...}'</code> (session-only), or the <code>agents</code> option in the Agent SDK.</p>
+
+<h3>Built-in subagents</h3>
+<ul>
+<li><strong>Explore</strong>: fast, read-only codebase search</li>
+<li><strong>Plan</strong>: researches the codebase to build a plan in plan mode</li>
+<li><strong>general-purpose</strong>: multi-step tasks with the full tool set</li>
+</ul>
+
+<h3>Key facts</h3>
+<div class="callout trap"><span class="title">⚠️ #1 trap: subagents do NOT inherit the parent's context</span>
+A subagent sees only its own system prompt and the <strong>prompt string the parent passes</strong>. It doesn't see the conversation history. If the coordinator found that "the bug is in <code>auth/session.ts</code>, line 88", it must <em>write that into the delegation prompt</em>.</div>
+<ul>
+<li><strong>Parallelism:</strong> several <code>Agent</code> calls in a single assistant response run concurrently, e.g. one subagent per independent module.</li>
+<li><strong>Context protection:</strong> the subagent reads 40 files, and only a summary returns. This is the main reason to use them.</li>
+<li><strong>Hub-and-spoke:</strong> a coordinator decomposes the work, delegates, aggregates, and validates. Subagents don't talk to each other; all communication goes through the coordinator.</li>
+<li><strong>No nesting:</strong> in Claude Code, subagents can't spawn their own subagents.</li>
+<li><strong>Structured hand-off:</strong> ask subagents for structured output (with sources or file:line) so the coordinator can merge results without losing provenance.</li>
+<li><strong>Independent review:</strong> a fresh subagent (or separate session) reviews better than the same session reviewing its own work, because it doesn't share the author's assumptions.</li>
+</ul>
+<div class="callout exam"><span class="title">🎯 Exam lens</span>"A coordinator's final report misses whole areas" → the root cause is usually <strong>task decomposition</strong> (the coordinator's scope was too narrow), not the subagents. Fix the coordinator's decomposition instead of adding another layer.</div>
+
+<!-- ============================================================ -->
+<h2 id="hooks" data-nav="9. Hooks" data-keywords="hooks PreToolUse PostToolUse Stop UserPromptSubmit SessionStart exit code 2 deterministic">9. Hooks — deterministic control</h2>
+<p>Hooks are <strong>shell commands (or LLM prompts) that the harness runs at fixed lifecycle events</strong>. Unlike CLAUDE.md instructions, they <em>always</em> run. Use them for anything that must happen every single time.</p>
+
+<h3>Events</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Event</th><th>Fires</th><th>Can block?</th><th>Typical use</th></tr></thead>
+<tbody>
+<tr><td><code>SessionStart</code></td><td>Session start or resume</td><td>–</td><td>Inject context (git branch, open tickets)</td></tr>
+<tr><td><code>UserPromptSubmit</code></td><td>Before a prompt is processed</td><td>✅</td><td>Validate prompts, add context, block secrets</td></tr>
+<tr><td><code>PreToolUse</code></td><td>Before a tool runs (after Claude builds its params)</td><td>✅</td><td>Block dangerous commands, enforce policy, change input</td></tr>
+<tr><td><code>PermissionRequest</code></td><td>When a permission dialog would show</td><td>✅</td><td>Auto-allow or deny programmatically</td></tr>
+<tr><td><code>PostToolUse</code></td><td>After a tool succeeds</td><td>feedback</td><td>Auto-format, lint, run tests, normalise data</td></tr>
+<tr><td><code>Notification</code></td><td>Claude needs input or is idle</td><td>–</td><td>Desktop or Slack notification</td></tr>
+<tr><td><code>Stop</code></td><td>The main agent tries to finish</td><td>✅</td><td>"Tests must pass before stopping"</td></tr>
+<tr><td><code>SubagentStop</code></td><td>A subagent finishes</td><td>✅</td><td>Validate subagent output</td></tr>
+<tr><td><code>PreCompact</code></td><td>Before compaction</td><td>–</td><td>Back up the transcript, preserve key facts</td></tr>
+<tr><td><code>SessionEnd</code></td><td>Session ends</td><td>–</td><td>Cleanup, logging</td></tr>
+</tbody></table></div>
+
+<h3>Configuration (in any settings.json)</h3>
+<pre><code>{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/block-dangerous.sh" }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": "npx prettier --write \"$(jq -r .tool_input.file_path)\"" }] }
+    ]
+  }
+}</code></pre>
+<p><code>matcher</code> is a regex on the tool name (<code>Edit|Write</code>, <code>mcp__github__.*</code>). The hook receives JSON on <strong>stdin</strong>: <code>session_id</code>, <code>transcript_path</code>, <code>cwd</code>, <code>hook_event_name</code>, <code>tool_name</code>, <code>tool_input</code> (plus <code>tool_response</code> for PostToolUse).</p>
+
+<h3>Exit codes — memorise these</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Exit code</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>0</code></td><td>Success. Execution continues. stdout can return JSON for fine-grained control (and for SessionStart/UserPromptSubmit, it's added as context).</td></tr>
+<tr><td><code>2</code></td><td><strong>Blocking error.</strong> The action is blocked and <strong>stderr is fed back to Claude</strong> so it can adjust.</td></tr>
+<tr><td>other</td><td>Non-blocking error. stderr is shown to the user and execution continues.</td></tr>
+</tbody></table></div>
+<pre><code><span class="c">#!/usr/bin/env bash  — .claude/hooks/block-dangerous.sh</span>
+cmd=$(jq -r '.tool_input.command')
+<span class="k">if</span> echo "$cmd" | grep -qE 'rm -rf /|git push --force|DROP TABLE'; <span class="k">then</span>
+  echo "Blocked by policy: $cmd. Use a safer alternative." &gt;&amp;2
+  exit 2          <span class="c"># block + tell Claude why</span>
+<span class="k">fi</span>
+exit 0</code></pre>
+<p>Advanced JSON output, e.g. PreToolUse: <code>{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"…"}}</code> with <code>allow</code> / <code>deny</code> / <code>ask</code>.</p>
+<div class="callout warn"><span class="title">Stop-hook loop guard</span>When a Stop hook blocks (forcing Claude to keep working), check the <code>stop_hook_active</code> field in its input. Otherwise it can block forever.</div>
+<div class="callout exam"><span class="title">🎯 Exam lens: prompt vs hook</span>"Claude sometimes forgets to run the formatter" or "refunds over $500 must never be auto-approved" → <strong>a hook</strong> (deterministic), not a stronger CLAUDE.md instruction (probabilistic). For business rules with financial or compliance impact, the answer is programmatic enforcement.</div>
+
+<!-- ============================================================ -->
+<h2 id="mcp" data-nav="10. MCP servers" data-keywords="MCP model context protocol .mcp.json scope stdio http claude mcp add env var">10. MCP — connecting external systems</h2>
+<p>The <strong>Model Context Protocol</strong> lets Claude Code use tools, resources, and prompts from external servers (GitHub, Jira, databases, Sentry, internal APIs) without custom glue code.</p>
+
+<h3>Scopes</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Scope</th><th>Stored in</th><th>Visible to</th></tr></thead>
+<tbody>
+<tr><td><code>local</code> (default)</td><td><code>~/.claude.json</code> under the project path</td><td>Only you, only this project</td></tr>
+<tr><td><code>project</code></td><td><code>.mcp.json</code> at the repo root (committed)</td><td><strong>The whole team</strong> (each member approves it on first use)</td></tr>
+<tr><td><code>user</code></td><td><code>~/.claude.json</code></td><td>Only you, in every project</td></tr>
+</tbody></table></div>
+
+<h3>Adding servers</h3>
+<pre><code><span class="c"># Remote HTTP server (recommended transport for remote)</span>
+claude mcp add --transport http sentry https://mcp.sentry.dev/mcp
+
+<span class="c"># Local stdio server, shared with the team</span>
+claude mcp add --transport stdio --scope project db -- npx -y @bytebase/dbhub --dsn "$DB_URL"
+
+claude mcp list | get &lt;name&gt; | remove &lt;name&gt;
+claude mcp add-json &lt;name&gt; '{...}'
+<span class="c"># inside a session: /mcp  → status + OAuth login</span></code></pre>
+
+<h3><code>.mcp.json</code> with environment-variable expansion</h3>
+<pre><code>{
+  "mcpServers": {
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": { "Authorization": "Bearer ${GITHUB_TOKEN}" }
+    },
+    "jira": {
+      "command": "npx",
+      "args": ["-y", "@acme/jira-mcp"],
+      "env": { "JIRA_URL": "${JIRA_URL:-https://acme.atlassian.net}", "JIRA_TOKEN": "${JIRA_TOKEN}" }
+    }
+  }
+}</code></pre>
+<p><code>${VAR}</code> and <code>${VAR:-default}</code> keep <strong>secrets out of git</strong> while the config itself is shared.</p>
+
+<h3>MCP primitives</h3>
+<ul>
+<li><strong>Tools</strong>: callable actions, named <code>mcp__server__tool</code>.</li>
+<li><strong>Resources</strong>: readable data you can <code>@</code>-mention (e.g. <code>@github:issue://123</code>). They give the agent a catalogue without many exploratory tool calls.</li>
+<li><strong>Prompts</strong>: show up as slash commands (<code>/mcp__server__prompt</code>).</li>
+</ul>
+<div class="callout exam"><span class="title">🎯 Exam lens</span>
+<ul>
+<li>Claude picks the wrong tool → <strong>improve the tool descriptions</strong> (purpose, inputs, when to use it vs. similar tools). Don't add a routing classifier.</li>
+<li>Too many tools (e.g. 18) degrade selection → give each agent <strong>only the tools its role needs</strong>.</li>
+<li>Tool errors should be <strong>structured</strong> (<code>isError</code>, error category, whether it's retryable, a human-readable message). Never return an empty success for a failure. An empty result for a valid query is not an error.</li>
+<li>Team-wide server → <code>.mcp.json</code> (project scope). Personal experiment → local or user scope.</li>
+</ul></div>
+
+<!-- ============================================================ -->
+<h2 id="headless" data-nav="11. Headless, CLI flags &amp; CI/CD" data-keywords="claude -p print headless output-format json stream-json json-schema allowedTools max-turns CI GitHub Actions">11. Headless mode, CLI flags &amp; CI/CD</h2>
+<p><code>claude -p "&lt;prompt&gt;"</code> (print mode) runs the full agent loop <strong>non-interactively</strong> and exits. It's the basis for scripts, cron jobs, and CI pipelines.</p>
+
+<h3>CLI flags you must know</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Flag</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>-p</code>, <code>--print</code></td><td>Non-interactive (headless) mode</td></tr>
+<tr><td><code>--output-format text|json|stream-json</code></td><td><code>json</code> gives one result object (<code>result</code>, <code>session_id</code>, <code>total_cost_usd</code>, <code>num_turns</code>, <code>is_error</code>…). <code>stream-json</code> gives newline-delimited events.</td></tr>
+<tr><td><code>--json-schema '&lt;schema&gt;'</code></td><td>Validated structured output matching a JSON Schema (with <code>--output-format json</code>)</td></tr>
+<tr><td><code>--input-format stream-json</code></td><td>Stream input messages through stdin</td></tr>
+<tr><td><code>--allowedTools</code> / <code>--disallowedTools</code></td><td>Pre-approve or forbid tools: <code>"Read,Grep,Bash(npm test:*)"</code></td></tr>
+<tr><td><code>--permission-mode</code></td><td><code>default</code>, <code>acceptEdits</code>, <code>plan</code>, <code>bypassPermissions</code>…</td></tr>
+<tr><td><code>--max-turns N</code></td><td>Cap agent iterations (a safety net)</td></tr>
+<tr><td><code>--model</code></td><td>Choose the model (alias or full ID)</td></tr>
+<tr><td><code>--append-system-prompt</code> / <code>--system-prompt</code></td><td>Add to, or replace, the system prompt</td></tr>
+<tr><td><code>--mcp-config file.json</code></td><td>Load MCP servers for this run</td></tr>
+<tr><td><code>--agents '{json}'</code></td><td>Define subagents for this session</td></tr>
+<tr><td><code>-c</code>, <code>--continue</code></td><td>Continue the most recent session in this directory</td></tr>
+<tr><td><code>-r</code>, <code>--resume [id]</code></td><td>Resume a specific session (or pick from a list)</td></tr>
+<tr><td><code>--fork-session</code></td><td>With <code>--resume</code>/<code>--continue</code>: branch into a <strong>new</strong> session ID instead of appending</td></tr>
+<tr><td><code>--add-dir</code></td><td>Grant access to extra directories</td></tr>
+<tr><td><code>--verbose</code></td><td>Full turn-by-turn logging</td></tr>
+<tr><td><code>--dangerously-skip-permissions</code></td><td>Same as bypassPermissions. Only use it in sandboxes.</td></tr>
+</tbody></table></div>
+
+<h3>Examples</h3>
+<pre><code><span class="c"># Pipe input, get JSON back</span>
+git diff main | claude -p "Review this diff for bugs" --output-format json | jq -r .result
+
+<span class="c"># Guaranteed structured output</span>
+claude -p "Extract all TODOs in src/ with file and line" \
+  --output-format json \
+  --json-schema '{"type":"object","properties":{"todos":{"type":"array","items":{"type":"object","properties":{"file":{"type":"string"},"line":{"type":"integer"},"text":{"type":"string"}},"required":["file","line","text"]}}},"required":["todos"]}'
+
+<span class="c"># Locked-down CI run</span>
+claude -p "Fix the failing lint errors" \
+  --allowedTools "Read,Edit,Bash(npm run lint:*)" --max-turns 10</code></pre>
+
+<h3>GitHub Actions</h3>
+<pre><code><span class="c"># .github/workflows/claude-review.yml</span>
+on: { pull_request: { types: [opened, synchronize] } }
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: "Review this PR against CLAUDE.md standards. Comment only on real issues."
+          claude_args: "--max-turns 8 --allowedTools Read,Grep,Glob"</code></pre>
+<p>Run <code>/install-github-app</code> once to set it up. After that, team members can <code>@claude</code> in issues and PRs.</p>
+<div class="callout exam"><span class="title">🎯 Exam lens: CI design</span>
+<ul>
+<li>Put review standards in the <strong>project CLAUDE.md</strong> so CI and humans share them.</li>
+<li>Use <strong>a separate session or instance</strong> to review code that Claude generated. Self-review in the same context is weaker.</li>
+<li>Use <code>--output-format json</code> (plus <code>--json-schema</code>) so a script can post inline comments.</li>
+<li>On re-runs, pass in previous findings to <strong>avoid duplicate comments</strong>.</li>
+<li><strong>Message Batches API</strong> (≈50% cheaper, up to 24 h, matched by <code>custom_id</code>) suits <em>non-blocking</em> overnight jobs, <strong>not</strong> pre-merge checks that developers wait on.</li>
+</ul></div>
+
+<!-- ============================================================ -->
+<h2 id="sessions" data-nav="12. Sessions, context &amp; compaction" data-keywords="context window compaction /compact /clear resume fork checkpoint rewind plan mode lost in the middle">12. Sessions, context management &amp; checkpoints</h2>
+<h3>What fills the context window</h3>
+<p>System prompt + tool definitions (including MCP tools) + CLAUDE.md files + skill descriptions + the conversation + <strong>every tool result</strong>. Big tool outputs are the usual culprit. Check with <code>/context</code>.</p>
+
+<h3>Strategies</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Technique</th><th>When</th></tr></thead>
+<tbody>
+<tr><td><code>/clear</code></td><td>Switching to an unrelated task. Stale context hurts quality.</td></tr>
+<tr><td><code>/compact [focus]</code></td><td>A long task you want to continue. You decide what the summary keeps.</td></tr>
+<tr><td>Auto-compaction</td><td>Triggers automatically near the limit. Project CLAUDE.md is re-loaded afterwards, but conversation-only details may be lost.</td></tr>
+<tr><td>Subagents</td><td>Offload verbose exploration. Only the summary comes back.</td></tr>
+<tr><td>Scratchpad / notes files</td><td>Persist key findings (decisions, exact IDs, amounts) to a file that survives compaction and new sessions.</td></tr>
+<tr><td>Trim tool outputs</td><td>Have tools or hooks return only the relevant fields, not 40-field records.</td></tr>
+<tr><td>"Case facts" block</td><td>Keep critical facts (customer ID, amounts, dates) in a structured block, not buried in prose, so summaries don't drop exact values.</td></tr>
+</tbody></table></div>
+<div class="callout tip"><span class="title">💡 Lost in the middle</span>Models attend most reliably to the start and end of long inputs. Put key findings and instructions at the beginning or end, and use clear section headers.</div>
+
+<h3>Sessions</h3>
+<ul>
+<li><code>claude --continue</code>: pick up the latest conversation. <code>claude --resume</code>: choose one.</li>
+<li><code>--fork-session</code>: try two approaches from the same starting point without clobbering the original.</li>
+<li>When resuming after files have changed, <strong>tell Claude what changed</strong>. Stale tool results in history can mislead it. Sometimes a new session with a summary is better than resuming.</li>
+</ul>
+
+<h3>Checkpoints &amp; rewind</h3>
+<p>Claude Code checkpoints file edits automatically. <kbd>Esc</kbd><kbd>Esc</kbd> or <code>/rewind</code> restores <strong>code, conversation, or both</strong> to an earlier point.</p>
+<div class="callout warn"><span class="title">Limitation</span>Checkpoints track Claude's file-edit tools only. They <strong>don't</strong> undo bash side effects (<code>rm</code>, DB migrations, <code>git push</code>) or external changes. Git is still your real safety net.</div>
+
+<h3>Recommended workflow: Explore → Plan → Implement → Commit</h3>
+<ol>
+<li><strong>Explore</strong> in plan mode. Read files without editing.</li>
+<li><strong>Plan</strong>: have Claude write a plan (extended thinking helps). Review and edit it.</li>
+<li><strong>Implement</strong> step by step, verifying with tests. TDD works well: write the tests first, then iterate until they pass.</li>
+<li><strong>Commit</strong> and open a PR.</li>
+</ol>
+<p>Plan mode is worth it for multi-file, architectural, or ambiguous changes. For a clear one-line fix, go straight to editing.</p>
+
+<!-- ============================================================ -->
+<h2 id="sdk" data-nav="13. Claude Agent SDK" data-keywords="Agent SDK query ClaudeAgentOptions ClaudeSDKClient python typescript">13. Claude Agent SDK</h2>
+<p>The Agent SDK exposes Claude Code's harness (loop, tools, permissions, hooks, subagents, MCP, compaction) as a library, so you can build your own agents: support bots, research agents, data pipelines.</p>
+<pre><code><span class="k">from</span> claude_agent_sdk <span class="k">import</span> query, ClaudeAgentOptions
+
+options = ClaudeAgentOptions(
+    system_prompt="You are a careful refactoring agent.",
+    allowed_tools=["Read", "Grep", "Glob", "Edit", "Bash"],
+    permission_mode="acceptEdits",
+    max_turns=15,
+    cwd="/repo",
+    setting_sources=["project"],      <span class="c"># load CLAUDE.md / .claude settings from the repo</span>
+    mcp_servers={"jira": {...}},
+    agents={"tester": AgentDefinition(description="Runs and fixes tests", tools=["Bash","Read","Edit"], prompt="...")},
+)
+
+<span class="k">async for</span> msg <span class="k">in</span> query(prompt="Rename UserSvc to UserService everywhere", options=options):
+    print(msg)          <span class="c"># AssistantMessage, ToolUse…, finally ResultMessage(subtype="success" | "error_max_turns" …)</span></code></pre>
+<ul>
+<li><code>query()</code>: one-shot async iterator. <code>ClaudeSDKClient</code>: multi-turn conversation with interrupts.</li>
+<li><strong>Custom tools</strong>: define in-process with <code>@tool</code> + <code>create_sdk_mcp_server</code>, then reference them as <code>mcp__name__tool</code>.</li>
+<li><strong>Hooks</strong>: Python or TS callbacks for <code>PreToolUse</code>, <code>PostToolUse</code>, etc. Same semantics as the CLI.</li>
+<li><strong>Sessions</strong>: <code>resume=session_id</code>, <code>fork_session=True</code>.</li>
+<li><code>can_use_tool</code> callback: custom permission logic at runtime.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="extensions" data-nav="14. Plugins &amp; choosing a mechanism" data-keywords="plugins marketplace output styles statusline which mechanism comparison">14. Plugins &amp; choosing the right mechanism</h2>
+<p>A <strong>plugin</strong> bundles skills, commands, subagents, hooks, and MCP servers into one installable unit (<code>.claude-plugin/plugin.json</code>). Install with <code>/plugin marketplace add owner/repo</code> and then <code>/plugin install name@marketplace</code>, or pin them for a team through <code>enabledPlugins</code> in settings.</p>
+
+<h3>Decision table</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Need</th><th>Use</th><th>Why not the alternative</th></tr></thead>
+<tbody>
+<tr><td>Facts and conventions Claude should <em>always</em> know</td><td><strong>CLAUDE.md</strong> (or <code>.claude/rules</code>)</td><td>A skill loads only when invoked</td></tr>
+<tr><td>Rules for one directory or file type</td><td><strong><code>.claude/rules/</code> with <code>paths:</code></strong> or a subdirectory CLAUDE.md</td><td>Keeps the root CLAUDE.md lean</td></tr>
+<tr><td>A repeatable multi-step procedure</td><td><strong>Skill</strong> / slash command</td><td>CLAUDE.md would bloat every turn</td></tr>
+<tr><td>Verbose or parallel work, isolated context, a specialist role</td><td><strong>Subagent</strong> (or skill with <code>context: fork</code>)</td><td>The main context stays clean</td></tr>
+<tr><td>Must happen 100% of the time</td><td><strong>Hook</strong></td><td>Prompts are probabilistic</td></tr>
+<tr><td>Allow or forbid specific actions or files</td><td><strong>Permission rules</strong> (managed for the org)</td><td>Enforced by the harness, not the model</td></tr>
+<tr><td>Talk to Jira, GitHub, a DB, an internal API</td><td><strong>MCP server</strong></td><td>Standard, reusable, permissionable</td></tr>
+<tr><td>Distribute all of the above to many teams</td><td><strong>Plugin</strong> (+ marketplace)</td><td>One versioned bundle</td></tr>
+<tr><td>Automation in pipelines</td><td><strong><code>claude -p</code></strong> / GitHub Action / Agent SDK</td><td>No interactive prompts</td></tr>
+</tbody></table></div>
+<p><strong>Also good to know:</strong> output styles (change Claude's response style or persona), a custom status line (<code>/statusline</code>), sandboxed bash (filesystem and network isolation), and extended thinking for hard planning.</p>
+
+<!-- ============================================================ -->
+<h2 id="traps" data-nav="15. Exam traps cheat sheet" data-keywords="traps distractors cheat sheet">15. Exam traps cheat sheet</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Tempting distractor</th><th>Better answer</th></tr></thead>
+<tbody>
+<tr><td>Detect completion by parsing "Task complete" in text</td><td>Loop on <code>stop_reason == "tool_use"</code>, stop on <code>end_turn</code></td></tr>
+<tr><td>A hard iteration cap is the stop condition</td><td><code>stop_reason</code> drives the loop. <code>max_turns</code> is only a safety net.</td></tr>
+<tr><td>Subagent "already knows" what the coordinator found</td><td>Pass all needed context explicitly in the delegation prompt</td></tr>
+<tr><td>Make the CLAUDE.md instruction stronger ("ALWAYS!!")</td><td>A hook or permission rule for anything mandatory</td></tr>
+<tr><td>Put team config in <code>settings.local.json</code> / <code>~/.claude</code></td><td>Commit <code>.claude/settings.json</code>, <code>CLAUDE.md</code>, <code>.mcp.json</code></td></tr>
+<tr><td>Add a classifier or routing layer for wrong tool picks</td><td>Fix the tool descriptions first, and reduce tool count per agent</td></tr>
+<tr><td>Same session reviews its own code</td><td>A separate instance or subagent with fresh context</td></tr>
+<tr><td>JSON schema means the data is correct</td><td>A schema guarantees structure. Add semantic validation and a retry with the specific error.</td></tr>
+<tr><td>Retry until the field appears</td><td>If the data isn't in the source, retrying won't help. Make the field nullable or "not found".</td></tr>
+<tr><td>Batch API for pre-merge checks</td><td>Batch is for non-blocking, latency-tolerant work</td></tr>
+<tr><td>Escalate on negative sentiment or low self-reported confidence</td><td>Escalate on explicit request, policy gaps, or inability to make progress</td></tr>
+<tr><td>Return a generic "error" or empty list on failure</td><td>Structured error: category, retryable?, message. Distinguish "no results" from "failed".</td></tr>
+<tr><td>Summarise everything into prose</td><td>Keep exact values (amounts, IDs, dates) in a structured facts block</td></tr>
+<tr><td>Invented flags like <code>--headless</code>, <code>--batch</code>, <code>--ci</code></td><td>The real ones: <code>-p</code>, <code>--output-format</code>, <code>--json-schema</code>, <code>--allowedTools</code>, <code>--max-turns</code></td></tr>
+<tr><td>Rewind undoes everything</td><td>Checkpoints don't undo bash side effects or remote actions</td></tr>
+</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="quiz" data-nav="16. Self-check quiz" data-keywords="quiz practice questions">16. Self-check quiz</h2>
+<p class="quiz-score">Score: 0 / 0 answered (of 10)</p>
+
+<div class="quiz" data-answer="c">
+  <div class="q">1 · [D1] Your custom agent loop sometimes stops after the model says "Let me check the database" without calling a tool, and sometimes keeps looping after the answer is complete. What's the fix?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Stop when the response contains the phrase "final answer"</button>
+    <button class="opt" data-k="b">B. Set a fixed limit of 5 iterations</button>
+    <button class="opt" data-k="c">C. Continue while stop_reason is "tool_use"; stop on "end_turn"</button>
+    <button class="opt" data-k="d">D. Stop whenever the response contains any text block</button>
+  </div>
+  <div class="why"><b>C.</b> <code>stop_reason</code> is the structured signal. Text parsing (A, D) is brittle: tool_use responses often contain text too. A fixed cap (B) either cuts work short or wastes calls.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+  <div class="q">2 · [D2] Your team wants Claude Code to <em>never</em> read <code>.env</code> files in a repo, for every developer. Best approach?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Add <code>"deny": ["Read(./.env)", "Read(./.env.*)"]</code> to the committed <code>.claude/settings.json</code></button>
+    <button class="opt" data-k="b">B. Add "Never read .env files" to the project CLAUDE.md</button>
+    <button class="opt" data-k="c">C. Add the deny rule to each developer's <code>.claude/settings.local.json</code></button>
+    <button class="opt" data-k="d">D. Add .env to .gitignore</button>
+  </div>
+  <div class="why"><b>A.</b> Permission rules are enforced by the harness, and the shared settings file reaches every teammate. B is advisory only. C is personal and gitignored. D affects git, not Claude's file access.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+  <div class="q">3 · [D1] A coordinator delegates "fix the bug" to a subagent after spending 20 turns finding that the bug is in <code>session.ts:88</code>. The subagent starts searching the whole repo from scratch. Why?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. The subagent uses a weaker model</button>
+    <button class="opt" data-k="b">B. The subagent's tools are restricted</button>
+    <button class="opt" data-k="c">C. Context was compacted</button>
+    <button class="opt" data-k="d">D. Subagents don't inherit the parent's conversation; the findings must be in the delegation prompt</button>
+  </div>
+  <div class="why"><b>D.</b> Subagents start with fresh, isolated context. The coordinator has to pass the file, line, and reasoning explicitly.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+  <div class="q">4 · [D2] Developers complain that Claude Code sometimes forgets to run Prettier after editing files. What's the most reliable fix?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Add "ALWAYS run prettier after edits" in bold to CLAUDE.md</button>
+    <button class="opt" data-k="b">B. A PostToolUse hook matching <code>Edit|Write</code> that runs prettier on the file</button>
+    <button class="opt" data-k="c">C. A /format skill developers can call</button>
+    <button class="opt" data-k="d">D. Switch to a larger model</button>
+  </div>
+  <div class="why"><b>B.</b> Hooks are deterministic and run every time. Prompt instructions (A) are probabilistic, and C still depends on someone remembering.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+  <div class="q">5 · [D2] A hook script must <strong>block</strong> a Bash command and tell Claude why, so it can try another approach. How should it exit?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Exit 0 and print the reason to stdout</button>
+    <button class="opt" data-k="b">B. Exit 1 and print the reason to stdout</button>
+    <button class="opt" data-k="c">C. Exit 2 and print the reason to stderr</button>
+    <button class="opt" data-k="d">D. Kill the Claude Code process</button>
+  </div>
+  <div class="why"><b>C.</b> Exit code 2 is the blocking error, and stderr is fed back to Claude. Other non-zero codes are non-blocking and stderr goes only to the user.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+  <div class="q">6 · [D2] The team wants a shared Jira MCP server that every developer gets automatically, without committing the API token. What should they do?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Commit <code>.mcp.json</code> with <code>"env": {"JIRA_TOKEN": "${JIRA_TOKEN}"}</code></button>
+    <button class="opt" data-k="b">B. Each developer runs <code>claude mcp add</code> with default scope</button>
+    <button class="opt" data-k="c">C. Commit <code>.mcp.json</code> with the token inline</button>
+    <button class="opt" data-k="d">D. Put the server config in CLAUDE.md</button>
+  </div>
+  <div class="why"><b>A.</b> Project scope (<code>.mcp.json</code>) shares the config, and <code>${VAR}</code> expansion keeps secrets in each developer's environment. B's default scope is local, so each developer would have to set it up manually.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+  <div class="q">7 · [D2] A CI job needs Claude to output review findings in a strict JSON shape that a script turns into inline PR comments. Which invocation fits?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. <code>claude --headless --format=json</code></button>
+    <button class="opt" data-k="b">B. <code>claude -p "..." --output-format json --json-schema '{...}'</code></button>
+    <button class="opt" data-k="c">C. <code>claude --batch "..."</code></button>
+    <button class="opt" data-k="d">D. Interactive <code>claude</code> plus copy and paste</button>
+  </div>
+  <div class="why"><b>B.</b> <code>-p</code> is headless mode. <code>--output-format json</code> plus <code>--json-schema</code> gives validated structured output. <code>--headless</code> and <code>--batch</code> are invented flags.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+  <div class="q">8 · [D5] After two hours on one task, Claude starts forgetting the exact refund amount agreed earlier. Which change helps most?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Switch to a model with a bigger context window and keep going</button>
+    <button class="opt" data-k="b">B. Run <code>/clear</code> and restate the task from memory</button>
+    <button class="opt" data-k="c">C. Ask Claude to try harder to remember</button>
+    <button class="opt" data-k="d">D. Keep critical values in a structured facts block or notes file that survives compaction, and use <code>/compact</code> with focus instructions</button>
+  </div>
+  <div class="why"><b>D.</b> Progressive summarisation loses exact values. Persisting them in a structured block or file, plus a focused compaction, preserves them. B throws away context; A only delays the problem.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+  <div class="q">9 · [D2] You have a 12-step release checklist that's only needed a few times a month. Where should it live?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. In the root CLAUDE.md</button>
+    <button class="opt" data-k="b">B. In <code>~/.claude/CLAUDE.md</code></button>
+    <button class="opt" data-k="c">C. As a project skill <code>.claude/skills/release/SKILL.md</code></button>
+    <button class="opt" data-k="d">D. In a PreToolUse hook</button>
+  </div>
+  <div class="why"><b>C.</b> Skills load on demand (progressive disclosure), are shared through git, and can be invoked as <code>/release</code>. A would bloat every session; B is personal; hooks aren't procedures.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+  <div class="q">10 · [D1] Claude finishes generating code and you want a high-quality review before merge. What's the best setup?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Ask the same session "please review what you just wrote"</button>
+    <button class="opt" data-k="b">B. Use a separate subagent or Claude instance, with fresh context and review criteria</button>
+    <button class="opt" data-k="c">C. Raise temperature and regenerate</button>
+    <button class="opt" data-k="d">D. Submit it through the Batch API overnight</button>
+  </div>
+  <div class="why"><b>B.</b> An independent reviewer doesn't share the author's assumptions. A is self-review bias; D is wrong for blocking pre-merge checks.</div>
+</div>
+
+<div class="callout"><span class="title">📚 Source of truth</span>Verify details against the official docs at <a href="https://code.claude.com/docs" target="_blank" rel="noopener">code.claude.com/docs</a> and <a href="https://docs.claude.com" target="_blank" rel="noopener">docs.claude.com</a>. Claude Code ships fast, and flags and features change.</div>
+
+<nav class="pager">
+  <a href="../index.html">← Home</a>
+  <a href="how-llms-work.html">Next: How LLMs Work →</a>
+</nav>
+<footer class="site">CCA Study Hub · personal study notes · not an official Anthropic resource</footer>
+
+</article>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>
