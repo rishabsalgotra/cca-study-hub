@@ -1,14 +1,15 @@
 /* ==========================================================
-   CCA Study Hub — shared shell (menu, TOC, theme, quiz)
+   Quantum Computing — shared shell (menu, TOC, theme, quiz)
    ----------------------------------------------------------
    TO ADD A NEW TOPIC:
    1. Copy topics/_template.html to topics/<id>.html and write content.
       Every <h2 id="..."> automatically becomes a menu entry.
    2. Add one entry to TOPICS below (set ready: true).
    ========================================================== */
-const SITE = { title: "CCA Study Hub", subtitle: "Claude Certified Architect – Foundations" };
+const SITE = { title: "Quantum Computing", subtitle: "quantumcompute.world · study notes", mark: "QC" };
 
 const TOPICS = [
+  { id: "quantum-basics", title: "Quantum Basics", href: "topics/quantum-basics.html", icon: "⚛", group: "Quantum computing", ready: true, domain: "Basics" },
   { id: "claude-code", title: "Claude Code", href: "topics/claude-code.html", icon: "⌘", group: "Topics", ready: true, domain: "D1 · D2 · D5" },
   { id: "how-llms-work", title: "How LLMs Work", href: "topics/how-llms-work.html", icon: "◇", group: "Topics", ready: true, domain: "Foundations" },
   { id: "agentic-architecture", title: "Agentic Architecture", href: "topics/agentic-architecture.html", icon: "⟳", group: "Topics", ready: true, domain: "D1" },
@@ -42,7 +43,7 @@ const TOPICS = [
   topbar.className = "topbar";
   topbar.innerHTML = `
     <button class="icon-btn menu-btn" aria-label="Open menu">☰</button>
-    <a class="brand" href="${root}/index.html"><span class="brand-mark">CA</span>
+    <a class="brand" href="${root}/index.html"><span class="brand-mark">${SITE.mark}</span>
       <span>${SITE.title}<small>${SITE.subtitle}</small></span></a>
     <span class="spacer"></span>
     <button class="icon-btn theme-btn" aria-label="Toggle theme" title="Toggle light/dark">◐</button>`;

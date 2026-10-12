@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quantum Computing Basics</title>
+<meta name="description" content="Quantum computing from first principles: qubits, superposition, the Bloch sphere, measurement, interference, gates, entanglement, circuits, noise and error correction, algorithms, cryptography, hardware, and your first Qiskit program, with interactive demos.">
+<link rel="canonical" href="https://www.quantumcompute.world/topics/quantum-basics.html">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/quantum.css">
+</head>
+<body data-root=".." data-topic="quantum-basics">
+<main>
+<article class="content">
+
+<div class="eyebrow">Topic 1 · Quantum computing</div>
+<h1>Quantum computing basics, from qubits to algorithms</h1>
+<p class="lede">Quantum computers process information using the rules of quantum physics: <strong>superposition</strong>, <strong>interference</strong> and <strong>entanglement</strong>. This page builds every basic idea from scratch, with no physics degree required. Each concept comes with a picture, an interactive demo you can play with, and the minimal maths that makes it precise.</p>
+<div class="meta-row">
+  <span class="pill"><b>19</b> sections</span>
+  <span class="pill"><b>4</b> interactive demos</span>
+  <span class="pill"><b>4</b> animated diagrams</span>
+  <span class="pill">≈ 90 min read</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="why" data-nav="1. Why quantum computing?" data-keywords="motivation classical limits what is quantum computing good for">1. Why quantum computing?</h2>
+<p>Classical computers, from your phone to the largest supercomputer, store information as <strong>bits</strong> that are either 0 or 1, and change them with logic gates. They're extraordinarily good at almost everything. But some problems grow so fast with their size that no classical computer will ever solve them exactly. Simulating molecules is one example: describing 50 interacting electrons exactly needs more numbers than there are atoms in a planet.</p>
+<p>A <strong>quantum computer</strong> stores information in <strong>qubits</strong> and manipulates it with quantum operations. For certain problems this lets it use an approach no classical machine can efficiently imitate: preparing a large superposition, then using <em>interference</em> so that wrong answers cancel out and right answers reinforce each other.</p>
+<div class="grid">
+  <div class="card"><h4>⚗️ Simulating nature</h4><p>Chemistry, materials and drug discovery: molecules are quantum systems, so a quantum computer is a natural simulator. This is widely seen as the most likely first big win.</p></div>
+  <div class="card"><h4>🔐 Cryptography</h4><p>Shor's algorithm would break RSA and elliptic-curve cryptography on a large, error-corrected machine. That is why "post-quantum" cryptography is being rolled out now.</p></div>
+  <div class="card"><h4>🔎 Search &amp; optimisation</h4><p>Grover's algorithm gives a quadratic speed-up for unstructured search. Heuristics for optimisation are being researched, but proven advantages there are limited.</p></div>
+  <div class="card"><h4>🚫 Not a faster everything</h4><p>Quantum computers won't speed up spreadsheets, web servers or video games. They are specialised accelerators for specific problem structures.</p></div>
+</div>
+<div class="callout"><span class="title">The one-sentence version</span>A quantum computer works with <strong>amplitudes</strong>, numbers that behave like waves, over many possible answers at once. It is useful only when an algorithm can make the amplitudes of wrong answers <em>cancel</em> and the right answer's amplitude <em>grow</em> before you look.</div>
+
+<!-- ============================================================ -->
+<h2 id="qubit" data-nav="2. Bits vs qubits" data-keywords="bit qubit dirac notation ket vector basis state">2. Bits vs qubits</h2>
+<figure class="diagram">
+<svg viewBox="0 0 760 225" role="img" aria-label="Left: a classical bit is exactly one of two values, 0 or 1. Right: a qubit's state is any point on a sphere, with 0 at the north pole and 1 at the south pole.">
+  <defs><marker id="qb-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker></defs>
+  <text x="190" y="24" text-anchor="middle" font-size="15" font-weight="700">Classical bit</text>
+  <rect class="box-accent" x="90" y="60" width="80" height="80" rx="12"/><text x="130" y="112" text-anchor="middle" font-size="34" font-weight="700">0</text>
+  <rect class="box" x="210" y="60" width="80" height="80" rx="12"/><text x="250" y="112" text-anchor="middle" font-size="34" font-weight="700" opacity=".45">1</text>
+  <text x="190" y="175" text-anchor="middle" class="lbl">always exactly one of two values</text>
+  <text x="190" y="195" text-anchor="middle" class="lbl">reading it doesn't change it</text>
+  <line x1="380" y1="20" x2="380" y2="205" style="stroke:var(--border)"/>
+  <text x="570" y="24" text-anchor="middle" font-size="15" font-weight="700">Qubit</text>
+  <circle class="box" cx="570" cy="125" r="70"/>
+  <ellipse cx="570" cy="125" rx="70" ry="20" style="fill:none;stroke:var(--muted);stroke-dasharray:3 4"/>
+  <line class="line-accent" x1="570" y1="125" x2="618" y2="82" style="stroke-width:3" marker-end="url(#qb-ar)"/>
+  <circle cx="570" cy="125" r="3" style="fill:var(--muted)"/>
+  <text x="570" y="49" text-anchor="middle" class="q-mono" font-weight="700">|0⟩</text>
+  <text x="570" y="212" text-anchor="middle" class="q-mono" font-weight="700">|1⟩</text>
+  <text x="652" y="78" class="lbl-accent">|ψ⟩</text>
+  <text x="660" y="150" class="lbl">any point on</text><text x="660" y="166" class="lbl">the sphere</text>
+</svg>
+<figcaption>A bit is a switch. A qubit's state is a direction, so it carries continuous information, though you can only ever read out one bit from it.</figcaption>
+</figure>
+<p>Physicists write quantum states with <strong>Dirac (bra-ket) notation</strong>. The two basis states of a qubit are written <span class="ket">|0⟩</span> and <span class="ket">|1⟩</span> (read "ket zero" and "ket one"). Under the hood, these are just two-dimensional column vectors:</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Notation</th><th>Vector</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td class="ket">|0⟩</td><td><span class="mat" style="grid-template-columns:auto"><span>1</span><span>0</span></span></td><td>Like a classical 0</td></tr>
+<tr><td class="ket">|1⟩</td><td><span class="mat" style="grid-template-columns:auto"><span>0</span><span>1</span></span></td><td>Like a classical 1</td></tr>
+<tr><td class="ket">α|0⟩ + β|1⟩</td><td><span class="mat" style="grid-template-columns:auto"><span>α</span><span>β</span></span></td><td>A <strong>superposition</strong>: α and β are complex numbers called amplitudes</td></tr>
+</tbody></table></div>
+<div class="table-wrap"><table>
+<thead><tr><th></th><th>Classical bit</th><th>Qubit</th></tr></thead>
+<tbody>
+<tr><td>State</td><td>0 or 1</td><td>α|0⟩ + β|1⟩, with |α|² + |β|² = 1</td></tr>
+<tr><td>Reading it</td><td>Gives the stored value; no change</td><td>Gives 0 or 1 at random (Born rule) and <em>changes</em> the state</td></tr>
+<tr><td>Copying</td><td>Free</td><td>Impossible for unknown states (no-cloning theorem)</td></tr>
+<tr><td>Operations</td><td>Logic gates (AND, OR, NOT), often irreversible</td><td>Unitary gates, always reversible (except measurement)</td></tr>
+<tr><td>n of them describe…</td><td>One of 2ⁿ values</td><td>2ⁿ complex amplitudes at once</td></tr>
+</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="superposition" data-nav="3. Superposition" data-keywords="superposition amplitude probability born rule collapse">3. Superposition and amplitudes</h2>
+<p>A qubit in <strong>superposition</strong> isn't "secretly 0 or 1 and we just don't know which". It is in a genuinely different state, described by two <strong>amplitudes</strong> α and β. Amplitudes are not probabilities: they can be negative or complex. Probabilities only appear when you <em>measure</em>:</p>
+<div class="callout exam"><span class="title">The Born rule</span>Measuring α|0⟩ + β|1⟩ gives <strong>0 with probability |α|²</strong> and <strong>1 with probability |β|²</strong>. Because something must happen, |α|² + |β|² = 1 (the state is <em>normalised</em>).</div>
+
+<div class="qdemo" id="sup">
+  <h4>Try it: prepare a superposition, then measure it</h4>
+  <div class="qgrid">
+    <div class="qctrl">
+      <label for="sup-theta">Rotation angle θ <output id="sup-theta-out">90°</output><input type="range" id="sup-theta" min="0" max="180" step="1" value="90"></label>
+      <div>State: <span class="ket" id="sup-state"></span></div>
+      <div class="readout">
+        <span class="ket">P(0)</span><div class="pbar"><span id="sup-b0"></span></div><span class="qval" id="sup-p0"></span>
+        <span class="ket">P(1)</span><div class="pbar alt"><span id="sup-b1"></span></div><span class="qval" id="sup-p1"></span>
+      </div>
+      <p class="qnote">The state is cos(θ/2)|0⟩ + sin(θ/2)|1⟩. At θ = 90° it's the equal superposition |+⟩.</p>
+    </div>
+    <div class="qctrl">
+      <div class="btnrow"><button class="btn" type="button" data-shots="1">Measure once</button><button class="btn" type="button" data-shots="100">Measure 100 copies</button><button class="gbtn alt" type="button" id="sup-reset">Reset</button></div>
+      <div>Measurements: <b id="sup-n">0</b></div>
+      <div class="readout">
+        <span class="ket">0</span><div class="pbar ok"><span id="sup-h0"></span></div><span class="qval" id="sup-c0">0</span>
+        <span class="ket">1</span><div class="pbar ok"><span id="sup-h1"></span></div><span class="qval" id="sup-c1">0</span>
+      </div>
+      <p class="qnote" id="sup-last" aria-live="polite">Measure to collapse the state.</p>
+    </div>
+  </div>
+  <p class="qnote">Each measurement uses a fresh, identically prepared qubit. A single result tells you almost nothing; the statistics over many "shots" reveal |α|² and |β|².</p>
+</div>
+
+<figure class="diagram">
+<svg class="anim" data-still="1.0" viewBox="0 0 760 220" role="img" aria-label="Animation: a qubit in equal superposition points sideways with 50 percent probability for each outcome. When measured, it collapses: the first time to 0, where the 0 bar becomes 100 percent, and the next time to 1.">
+  <defs><marker id="qc-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker></defs>
+  <circle class="box" cx="150" cy="110" r="70"/>
+  <text x="150" y="30" text-anchor="middle" class="q-mono" font-weight="700">|0⟩</text>
+  <text x="150" y="203" text-anchor="middle" class="q-mono" font-weight="700">|1⟩</text>
+  <line class="line-accent" x1="150" y1="110" x2="215" y2="110" style="stroke-width:3" marker-end="url(#qc-ar)">
+    <animate attributeName="x2" values="215;215;150;150;215;215;150;150;215" keyTimes="0;0.2;0.25;0.45;0.5;0.7;0.75;0.95;1" dur="8s" repeatCount="indefinite"/>
+    <animate attributeName="y2" values="110;110;50;50;110;110;170;170;110" keyTimes="0;0.2;0.25;0.45;0.5;0.7;0.75;0.95;1" dur="8s" repeatCount="indefinite"/>
+  </line>
+  <rect class="q-lit" x="285" y="78" width="110" height="64" rx="10" opacity="0"><animate attributeName="opacity" values="0;0;.6;0;0;0;.6;0;0" keyTimes="0;0.19;0.23;0.3;0.5;0.69;0.73;0.8;1" dur="8s" repeatCount="indefinite"/></rect>
+  <rect class="box" x="290" y="82" width="100" height="56" rx="9"/>
+  <text x="340" y="115" text-anchor="middle" font-size="14" font-weight="700">measure</text>
+  <path class="line" d="M222,110 L288,110"/>
+  <line x1="440" y1="170" x2="700" y2="170" style="stroke:var(--muted)"/>
+  <rect class="q-zero" x="470" y="115" width="70" height="55" rx="4">
+    <animate attributeName="height" values="55;55;110;110;55;55;0;0;55" keyTimes="0;0.2;0.25;0.45;0.5;0.7;0.75;0.95;1" dur="8s" repeatCount="indefinite"/>
+    <animate attributeName="y" values="115;115;60;60;115;115;170;170;115" keyTimes="0;0.2;0.25;0.45;0.5;0.7;0.75;0.95;1" dur="8s" repeatCount="indefinite"/>
+  </rect>
+  <rect class="q-sup" x="590" y="115" width="70" height="55" rx="4">
+    <animate attributeName="height" values="55;55;0;0;55;55;110;110;55" keyTimes="0;0.2;0.25;0.45;0.5;0.7;0.75;0.95;1" dur="8s" repeatCount="indefinite"/>
+    <animate attributeName="y" values="115;115;170;170;115;115;60;60;115" keyTimes="0;0.2;0.25;0.45;0.5;0.7;0.75;0.95;1" dur="8s" repeatCount="indefinite"/>
+  </rect>
+  <text x="505" y="190" text-anchor="middle" class="q-mono">|0⟩</text><text x="625" y="190" text-anchor="middle" class="q-mono">|1⟩</text>
+  <text x="565" y="38" text-anchor="middle" class="lbl-accent" opacity="0">before: 50% / 50%<animate attributeName="opacity" values="1;1;0;0;1;1;0;0;1" keyTimes="0;0.2;0.21;0.49;0.5;0.7;0.71;0.99;1" dur="8s" repeatCount="indefinite"/></text>
+  <text x="565" y="38" text-anchor="middle" class="lbl-ok" opacity="0">result 0: the state is now |0⟩<animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.24;0.25;0.45;0.46;1" dur="8s" repeatCount="indefinite"/></text>
+  <text x="565" y="38" text-anchor="middle" class="lbl-ok" opacity="0">result 1: the state is now |1⟩<animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.74;0.75;0.95;0.96;1" dur="8s" repeatCount="indefinite"/></text>
+</svg>
+<figcaption>Measurement "collapses" the superposition: the outcome is random, and afterwards the qubit is in the state that was observed. All the amplitude information is gone.</figcaption>
+</figure>
+
+<!-- ============================================================ -->
+<h2 id="bloch" data-nav="4. The Bloch sphere" data-keywords="bloch sphere theta phi relative phase visualise single qubit">4. The Bloch sphere: picturing one qubit</h2>
+<p>Any single-qubit state can be written using two angles:</p>
+<pre><code>|ψ⟩ = cos(θ/2)|0⟩ + e^{iφ} sin(θ/2)|1⟩        θ ∈ [0°, 180°],  φ ∈ [0°, 360°)</code></pre>
+<p>Those two angles are the latitude and longitude of a point on a unit sphere, the <strong>Bloch sphere</strong>. The north pole is |0⟩ and the south pole is |1⟩. Points on the equator are equal superpositions that differ only in their <strong>relative phase</strong> φ. Every single-qubit gate is a <em>rotation</em> of this sphere.</p>
+
+<div class="qdemo">
+  <h4>Try it: drive the Bloch vector with angles and gates</h4>
+  <div class="qgrid">
+    <svg id="bloch-svg" viewBox="0 0 360 330" role="img" aria-label="Interactive Bloch sphere showing the current qubit state as an arrow">
+      <defs><marker id="bl-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker></defs>
+    </svg>
+    <div class="qctrl">
+      <label for="bl-theta">θ (polar angle) <output id="bl-theta-out">0°</output><input type="range" id="bl-theta" min="0" max="180" step="1" value="0"></label>
+      <label for="bl-phi">φ (relative phase) <output id="bl-phi-out">0°</output><input type="range" id="bl-phi" min="0" max="359" step="1" value="0"></label>
+      <div>Start from:
+        <div class="btnrow" style="margin-top:4px"><button class="gbtn" type="button" data-bstate="0">|0⟩</button><button class="gbtn" type="button" data-bstate="1">|1⟩</button><button class="gbtn" type="button" data-bstate="+">|+⟩</button><button class="gbtn" type="button" data-bstate="-">|−⟩</button><button class="gbtn" type="button" data-bstate="+i">|+i⟩</button><button class="gbtn" type="button" data-bstate="-i">|−i⟩</button></div></div>
+      <div>Apply a gate (watch it rotate):
+        <div class="btnrow" style="margin-top:4px"><button class="gbtn" type="button" data-bgate="X">X</button><button class="gbtn" type="button" data-bgate="Y">Y</button><button class="gbtn" type="button" data-bgate="Z">Z</button><button class="gbtn" type="button" data-bgate="H">H</button><button class="gbtn" type="button" data-bgate="S">S</button><button class="gbtn" type="button" data-bgate="T">T</button></div></div>
+      <div class="qnote">Gates applied: <span class="ket" id="bl-history">—</span></div>
+      <div>α = <span class="ket" id="bl-alpha"></span> &nbsp; β = <span class="ket" id="bl-beta"></span></div>
+      <div class="readout">
+        <span class="ket">P(0)</span><div class="pbar"><span id="bl-bar0"></span></div><span class="qval" id="bl-p0"></span>
+        <span class="ket">P(1)</span><div class="pbar alt"><span id="bl-bar1"></span></div><span class="qval" id="bl-p1"></span>
+      </div>
+    </div>
+  </div>
+  <p class="qnote">Things to try: <b>H</b> on |0⟩ gives |+⟩ (the equator). Then <b>Z</b> flips the phase to |−⟩, and the probabilities don't change at all. Apply <b>H</b> again and you land on |1⟩. Phase is invisible to measurement until interference converts it into probability.</p>
+</div>
+<div class="table-wrap"><table>
+<thead><tr><th>Point on the sphere</th><th>State</th><th>Measured in the 0/1 basis</th></tr></thead>
+<tbody>
+<tr><td>North pole</td><td class="ket">|0⟩</td><td>Always 0</td></tr>
+<tr><td>South pole</td><td class="ket">|1⟩</td><td>Always 1</td></tr>
+<tr><td>Equator, front (+x)</td><td class="ket">|+⟩ = (|0⟩ + |1⟩)/√2</td><td>50 / 50</td></tr>
+<tr><td>Equator, back (−x)</td><td class="ket">|−⟩ = (|0⟩ − |1⟩)/√2</td><td>50 / 50, but a different state from |+⟩</td></tr>
+<tr><td>Equator, ±y</td><td class="ket">|±i⟩ = (|0⟩ ± i|1⟩)/√2</td><td>50 / 50</td></tr>
+</tbody></table></div>
+<div class="callout trap"><span class="title">⚠️ Common confusion</span>On the Bloch sphere, opposite points are <em>orthogonal</em> states: |0⟩ and |1⟩ are 180° apart on the sphere, even though their vectors are at 90° in the underlying space. That's why θ/2 appears in the formula. Also, a <strong>global</strong> phase (multiplying the whole state by e^{iγ}) has no physical effect and doesn't show up on the sphere.</div>
+
+<!-- ============================================================ -->
+<h2 id="measurement" data-nav="5. Measurement" data-keywords="measurement basis shots expectation projective collapse">5. Measurement</h2>
+<ul>
+<li><strong>Measurement is irreversible.</strong> It returns a classical bit and leaves the qubit in the matching basis state. The amplitudes are destroyed.</li>
+<li><strong>You can't read amplitudes directly.</strong> To estimate them you prepare and measure the same circuit many times. Each run is a <em>shot</em>, and the counts estimate the probabilities.</li>
+<li><strong>Measurement has a basis.</strong> "Measuring in the X basis" means rotating with H first and then measuring 0/1. A |+⟩ state gives random results in the Z (0/1) basis but always gives "+" in the X basis.</li>
+<li><strong>Precision costs shots.</strong> Statistical error shrinks like 1/√shots, so a 10× more precise estimate needs about 100× more runs.</li>
+</ul>
+<div class="callout"><span class="title">Why this matters for algorithms</span>Since one run returns only n classical bits from n qubits, a useful quantum algorithm must end in a state where the <em>answer</em> has high probability. Simply "computing all answers in parallel" and reading one at random is useless. Interference (next section) is what makes the right answer likely.</div>
+
+<!-- ============================================================ -->
+<h2 id="interference" data-nav="6. Phase & interference" data-keywords="interference phase mach zehnder constructive destructive hadamard">6. Phase and interference: the real source of power</h2>
+<p>Amplitudes add like waves. Two contributions with the same phase <strong>add up</strong> (constructive interference); with opposite phases they <strong>cancel</strong> (destructive interference). Quantum algorithms are choreographed so that paths leading to wrong answers cancel.</p>
+<figure class="diagram">
+<svg class="anim" data-still="2.4" viewBox="0 0 760 250" role="img" aria-label="Animation of a Mach-Zehnder interferometer: a single photon reaches a beam splitter and travels both paths at once; the paths recombine at a second beam splitter, where the amplitudes interfere so that detector D0 always clicks and detector D1 never does.">
+  <path class="line" d="M70,200 L160,200" style="stroke-dasharray:4 4"/>
+  <path class="line" d="M160,200 L160,90 L520,90" style="stroke-dasharray:4 4"/>
+  <path class="line" d="M160,200 L520,200 L520,90" style="stroke-dasharray:4 4"/>
+  <path class="line" d="M520,90 L643,90" style="stroke-dasharray:4 4"/>
+  <path class="line" d="M520,90 L520,44" style="stroke-dasharray:2 6;opacity:.5"/>
+  <rect class="box" x="18" y="185" width="52" height="30" rx="6"/><text x="44" y="205" text-anchor="middle" font-size="12">source</text>
+  <line x1="145" y1="215" x2="175" y2="185" style="stroke:var(--info);stroke-width:5"/>
+  <line x1="145" y1="105" x2="175" y2="75" style="stroke:var(--muted);stroke-width:5"/>
+  <line x1="505" y1="215" x2="535" y2="185" style="stroke:var(--muted);stroke-width:5"/>
+  <line x1="505" y1="105" x2="535" y2="75" style="stroke:var(--info);stroke-width:5"/>
+  <rect class="box" x="320" y="188" width="44" height="24" rx="5"/><text x="342" y="205" text-anchor="middle" font-size="11">φ = 0</text>
+  <circle class="q-det" cx="666" cy="90" r="22"/>
+  <circle class="q-lit" cx="666" cy="90" r="22" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.84;0.86;0.98;1" dur="5s" repeatCount="indefinite"/></circle>
+  <text x="666" y="95" text-anchor="middle" font-size="13" font-weight="700">D0</text>
+  <circle class="q-det" cx="520" cy="26" r="18"/><text x="520" y="31" text-anchor="middle" font-size="12" font-weight="700">D1</text>
+  <text x="666" y="132" text-anchor="middle" class="lbl-ok">always clicks</text>
+  <text x="548" y="30" class="lbl">never clicks: the two paths cancel</text>
+  <text x="196" y="236" text-anchor="middle" class="lbl">beam splitter ≈ H</text>
+  <text x="560" y="236" text-anchor="middle" class="lbl">beam splitter ≈ H</text>
+  <text x="340" y="80" text-anchor="middle" class="lbl">path A</text><text x="440" y="190" text-anchor="middle" class="lbl">path B</text>
+  <circle r="8" class="q-zero" opacity="0"><animateMotion dur="5s" repeatCount="indefinite" calcMode="linear" path="M70,200 L160,200" keyPoints="0;1;1" keyTimes="0;0.2;1"/><animate attributeName="opacity" values="1;1;0;0" keyTimes="0;0.2;0.21;1" dur="5s" repeatCount="indefinite"/></circle>
+  <circle r="8" class="q-sup" opacity="0"><animateMotion dur="5s" repeatCount="indefinite" calcMode="linear" path="M160,200 L160,90 L520,90" keyPoints="0;0;1;1" keyTimes="0;0.2;0.7;1"/><animate attributeName="opacity" values="0;0;.6;.6;0;0" keyTimes="0;0.2;0.21;0.7;0.71;1" dur="5s" repeatCount="indefinite"/></circle>
+  <circle r="8" class="q-sup" opacity="0"><animateMotion dur="5s" repeatCount="indefinite" calcMode="linear" path="M160,200 L520,200 L520,90" keyPoints="0;0;1;1" keyTimes="0;0.2;0.7;1"/><animate attributeName="opacity" values="0;0;.6;.6;0;0" keyTimes="0;0.2;0.21;0.7;0.71;1" dur="5s" repeatCount="indefinite"/></circle>
+  <circle r="8" class="q-zero" opacity="0"><animateMotion dur="5s" repeatCount="indefinite" calcMode="linear" path="M520,90 L644,90" keyPoints="0;0;1;1" keyTimes="0;0.7;0.85;1"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.7;0.71;0.85;0.86;1" dur="5s" repeatCount="indefinite"/></circle>
+</svg>
+<figcaption>A single photon is split into a superposition of two paths (faint violet dots). When the paths recombine, the amplitudes toward D1 cancel and those toward D0 add, so D0 clicks every time. In circuit language: H · H = I.</figcaption>
+</figure>
+
+<div class="qdemo" id="itf">
+  <h4>Try it: H → phase φ → H, and watch the amplitudes add up</h4>
+  <div class="qgrid">
+    <svg viewBox="0 0 460 230" role="img" aria-label="Phasor diagrams showing how the two path amplitudes add for each output">
+      <defs>
+        <marker id="ph-a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker>
+        <marker id="ph-b" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--info)"/></marker>
+        <marker id="ph-r" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--ok)"/></marker>
+      </defs>
+      <text x="125" y="24" text-anchor="middle" class="ph-title">amplitude of |0⟩</text>
+      <text x="385" y="24" text-anchor="middle" class="ph-title">amplitude of |1⟩</text>
+      <line class="ph-axis" x1="40" y1="120" x2="210" y2="120"/><line class="ph-axis" x1="70" y1="40" x2="70" y2="200"/>
+      <line class="ph-axis" x1="300" y1="120" x2="450" y2="120"/><line class="ph-axis" x1="330" y1="40" x2="330" y2="200"/>
+      <line id="itf0-r" class="ph-r" marker-end="url(#ph-r)"/><line id="itf0-a" class="ph-a" marker-end="url(#ph-a)"/><line id="itf0-b" class="ph-b" marker-end="url(#ph-b)"/>
+      <line id="itf1-r" class="ph-r" marker-end="url(#ph-r)"/><line id="itf1-a" class="ph-a" marker-end="url(#ph-a)"/><line id="itf1-b" class="ph-b" marker-end="url(#ph-b)"/>
+      <text x="230" y="222" text-anchor="middle">orange = path A, violet = path B (rotated by φ), green = total</text>
+    </svg>
+    <div class="qctrl">
+      <label for="itf-phi">Phase φ on path B <output id="itf-phi-out">0°</output><input type="range" id="itf-phi" min="0" max="359" step="1" value="0"></label>
+      <div class="btnrow"><button class="btn" type="button" id="itf-sweep">▶ Sweep φ</button></div>
+      <div class="readout">
+        <span class="ket">P(0)</span><div class="pbar"><span id="itf-b0"></span></div><span class="qval" id="itf-p0"></span>
+        <span class="ket">P(1)</span><div class="pbar alt"><span id="itf-b1"></span></div><span class="qval" id="itf-p1"></span>
+      </div>
+      <p class="qnote">P(0) = cos²(φ/2). At φ = 0 the |1⟩ contributions cancel; at φ = 180° (a Z gate) the |0⟩ contributions cancel instead, so H·Z·H = X.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="gates" data-nav="7. Quantum gates" data-keywords="gates pauli X Y Z hadamard S T rotation unitary reversible universal">7. Quantum gates</h2>
+<p>A quantum gate is a <strong>unitary</strong> matrix U (one with U†U = I) applied to the state vector. Unitary means it preserves total probability and is <strong>reversible</strong>: every gate can be undone. That is very different from a classical AND gate, which throws information away.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Gate</th><th>Matrix</th><th>What it does</th><th>On the Bloch sphere</th></tr></thead>
+<tbody>
+<tr><td><b>X</b> (NOT)</td><td><span class="mat"><span>0</span><span>1</span><span>1</span><span>0</span></span></td><td>|0⟩ ↔ |1⟩ (bit flip)</td><td>180° about x</td></tr>
+<tr><td><b>Y</b></td><td><span class="mat"><span>0</span><span>−i</span><span>i</span><span>0</span></span></td><td>Bit flip + phase flip</td><td>180° about y</td></tr>
+<tr><td><b>Z</b></td><td><span class="mat"><span>1</span><span>0</span><span>0</span><span>−1</span></span></td><td>|1⟩ → −|1⟩ (phase flip)</td><td>180° about z</td></tr>
+<tr><td><b>H</b> (Hadamard)</td><td><span class="mat"><span>1/√2</span><span>1/√2</span><span>1/√2</span><span>−1/√2</span></span></td><td>|0⟩ → |+⟩, |1⟩ → |−⟩; creates and undoes superposition</td><td>180° about the x+z diagonal</td></tr>
+<tr><td><b>S</b></td><td><span class="mat"><span>1</span><span>0</span><span>0</span><span>i</span></span></td><td>Quarter-turn phase</td><td>90° about z</td></tr>
+<tr><td><b>T</b></td><td><span class="mat"><span>1</span><span>0</span><span>0</span><span>e^{iπ/4}</span></span></td><td>Eighth-turn phase</td><td>45° about z</td></tr>
+<tr><td><b>R<sub>x</sub>(θ), R<sub>y</sub>(θ), R<sub>z</sub>(θ)</b></td><td>e^{−iθσ/2}</td><td>Continuous rotations, the dials of variational algorithms</td><td>θ about x, y or z</td></tr>
+<tr><td><b>CNOT</b> (2 qubits)</td><td><span class="mat wide"><span>1</span><span>0</span><span>0</span><span>0</span><span>0</span><span>1</span><span>0</span><span>0</span><span>0</span><span>0</span><span>0</span><span>1</span><span>0</span><span>0</span><span>1</span><span>0</span></span></td><td>Flips the target if the control is 1</td><td>Creates entanglement (no single-sphere picture)</td></tr>
+</tbody></table></div>
+<p class="qnote">The CNOT matrix is written with the control as the first (left) qubit and basis order |00⟩, |01⟩, |10⟩, |11⟩. Qiskit lists bits in the opposite order (qubit 0 rightmost), which swaps how this matrix looks.</p>
+<ul>
+<li><strong>Universality:</strong> {H, S, T, CNOT} (the "Clifford + T" set) can approximate <em>any</em> quantum computation to any desired accuracy, just as NAND gates suffice classically.</li>
+<li><strong>Clifford circuits are easy:</strong> circuits made only of H, S and CNOT can be simulated efficiently on a classical computer (the Gottesman–Knill theorem). The "magic" that makes quantum computing hard to simulate comes from non-Clifford gates like T.</li>
+<li><strong>Useful identities:</strong> H·H = I, X·X = I, HZH = X, HXH = Z, S² = Z, T² = S, T⁸ = I.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="multi" data-nav="8. Many qubits" data-keywords="tensor product state space exponential 2^n memory simulation">8. Many qubits: the exponential state space</h2>
+<p>Two qubits have four basis states, <span class="ket">|00⟩, |01⟩, |10⟩, |11⟩</span>, and a general two-qubit state needs four amplitudes. Every added qubit <strong>doubles</strong> the number of amplitudes: n qubits are described by 2ⁿ complex numbers. Combining independent qubits uses the <strong>tensor product</strong>, e.g. |0⟩ ⊗ |1⟩ = |01⟩.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Qubits</th><th>Amplitudes (2ⁿ)</th><th>Memory to store the state classically (16 bytes each)</th></tr></thead>
+<tbody>
+<tr><td>10</td><td>1,024</td><td>16 KiB: trivial</td></tr>
+<tr><td>30</td><td>≈ 1.07 billion</td><td>16 GiB: a laptop</td></tr>
+<tr><td>40</td><td>≈ 1.1 trillion</td><td>16 TiB: a large cluster</td></tr>
+<tr><td>50</td><td>≈ 1.1 × 10¹⁵</td><td>16 PiB: beyond most supercomputers</td></tr>
+<tr><td>300</td><td>≈ 2 × 10⁹⁰</td><td>More numbers than atoms in the observable universe (~10⁸⁰)</td></tr>
+</tbody></table></div>
+<div class="callout warn"><span class="title">Exponential state ≠ exponential output</span>2ⁿ amplitudes don't mean 2ⁿ answers you can read. Measurement returns just n bits. The exponential space is only useful when an algorithm uses structure (interference, periodicity) to concentrate probability on the answer. Also, many specific circuits can be simulated far more cheaply than the worst case (tensor networks, Clifford simulation), which is why "quantum advantage" claims are carefully contested.</div>
+
+<!-- ============================================================ -->
+<h2 id="entanglement" data-nav="9. Entanglement" data-keywords="entanglement bell state cnot correlation epr no signalling">9. Entanglement</h2>
+<p>Some multi-qubit states can't be written as a product of single-qubit states. These are <strong>entangled</strong>. The classic example is the Bell state, made with just two gates:</p>
+<pre><code>|00⟩  —H on q0→  (|0⟩+|1⟩)/√2 ⊗ |0⟩  —CNOT(q0→q1)→  (|00⟩ + |11⟩)/√2   ← a Bell state</code></pre>
+<figure class="diagram">
+<svg class="anim" data-still="1.9" viewBox="0 0 760 230" role="img" aria-label="Animation of the Bell circuit: qubit 0 passes a Hadamard gate into superposition; a CNOT entangles it with qubit 1; both are measured. The results panel fills with 00 and 11 outcomes and never shows 01 or 10.">
+  <line x1="70" y1="70" x2="440" y2="70" style="stroke:var(--muted);stroke-width:1.5"/>
+  <line x1="70" y1="160" x2="440" y2="160" style="stroke:var(--muted);stroke-width:1.5"/>
+  <text x="8" y="75" class="q-mono" font-weight="700">q0 |0⟩</text><text x="8" y="165" class="q-mono" font-weight="700">q1 |0⟩</text>
+  <rect class="box-accent" x="160" y="52" width="36" height="36" rx="6"/><text x="178" y="76" text-anchor="middle" class="q-mono" font-weight="700">H</text>
+  <line x1="300" y1="70" x2="300" y2="172" style="stroke:var(--text);stroke-width:1.6"/>
+  <circle cx="300" cy="70" r="6" style="fill:var(--text)"/>
+  <circle cx="300" cy="160" r="12" style="fill:var(--surface);stroke:var(--text);stroke-width:1.6"/>
+  <line x1="288" y1="160" x2="312" y2="160" style="stroke:var(--text);stroke-width:1.6"/>
+  <rect class="box" x="440" y="55" width="34" height="30" rx="5"/><rect class="box" x="440" y="145" width="34" height="30" rx="5"/>
+  <text x="457" y="75" text-anchor="middle" font-size="11">M</text><text x="457" y="165" text-anchor="middle" font-size="11">M</text>
+  <text x="178" y="112" text-anchor="middle" class="lbl">superposition</text><text x="300" y="200" text-anchor="middle" class="lbl">entangle</text>
+  <line x1="300" y1="70" x2="300" y2="160" class="line-accent" style="stroke-dasharray:3 4" opacity="0">
+    <animate attributeName="x1" values="300;300;440" keyTimes="0;0.62;1" dur="2.5s" repeatCount="indefinite"/>
+    <animate attributeName="x2" values="300;300;440" keyTimes="0;0.62;1" dur="2.5s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.62;0.63;1" dur="2.5s" repeatCount="indefinite"/>
+  </line>
+  <circle r="7" class="q-zero"><animateMotion dur="2.5s" repeatCount="indefinite" calcMode="linear" path="M70,70 L440,70"/><animate attributeName="opacity" values="1;1;0;0" keyTimes="0;0.29;0.3;1" dur="2.5s" repeatCount="indefinite"/></circle>
+  <circle r="7" class="q-sup" opacity="0"><animateMotion dur="2.5s" repeatCount="indefinite" calcMode="linear" path="M70,70 L440,70"/><animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.29;0.3;1" dur="2.5s" repeatCount="indefinite"/></circle>
+  <circle r="7" class="q-zero"><animateMotion dur="2.5s" repeatCount="indefinite" calcMode="linear" path="M70,160 L440,160"/><animate attributeName="opacity" values="1;1;0;0" keyTimes="0;0.62;0.63;1" dur="2.5s" repeatCount="indefinite"/></circle>
+  <circle r="7" class="q-sup" opacity="0"><animateMotion dur="2.5s" repeatCount="indefinite" calcMode="linear" path="M70,160 L440,160"/><animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.62;0.63;1" dur="2.5s" repeatCount="indefinite"/></circle>
+  <rect class="box" x="530" y="25" width="210" height="190" rx="10"/>
+  <text x="635" y="48" text-anchor="middle" font-size="13" font-weight="700">measurement results</text>
+  <text x="635" y="80" text-anchor="middle" class="q-mono" font-weight="700" opacity="0">q1 q0 = 0 0<animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.24;0.25;1" dur="10s" repeatCount="indefinite"/></text>
+  <text x="635" y="106" text-anchor="middle" class="q-mono" font-weight="700" opacity="0">q1 q0 = 1 1<animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.49;0.5;1" dur="10s" repeatCount="indefinite"/></text>
+  <text x="635" y="132" text-anchor="middle" class="q-mono" font-weight="700" opacity="0">q1 q0 = 1 1<animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.74;0.75;1" dur="10s" repeatCount="indefinite"/></text>
+  <text x="635" y="158" text-anchor="middle" class="q-mono" font-weight="700" opacity="0">q1 q0 = 0 0<animate attributeName="opacity" values="0;0;1;1" keyTimes="0;0.98;0.99;1" dur="10s" repeatCount="indefinite"/></text>
+  <text x="635" y="196" text-anchor="middle" class="lbl-bad">never 01 or 10</text>
+</svg>
+<figcaption>Orange = a definite |0⟩; violet = in superposition/entangled. After the CNOT the two qubits share one state (dashed link). Each result is random, 00 or 11, but the two qubits always agree.</figcaption>
+</figure>
+<div class="table-wrap"><table>
+<thead><tr><th>Bell state</th><th>Measurement correlation</th><th>Made from</th></tr></thead>
+<tbody>
+<tr><td class="ket">|Φ⁺⟩ = (|00⟩ + |11⟩)/√2</td><td>Always equal</td><td>H, CNOT</td></tr>
+<tr><td class="ket">|Φ⁻⟩ = (|00⟩ − |11⟩)/√2</td><td>Always equal (differs in phase)</td><td>H, CNOT, then Z</td></tr>
+<tr><td class="ket">|Ψ⁺⟩ = (|01⟩ + |10⟩)/√2</td><td>Always opposite</td><td>H, CNOT, then X</td></tr>
+<tr><td class="ket">|Ψ⁻⟩ = (|01⟩ − |10⟩)/√2</td><td>Always opposite (in every basis)</td><td>H, CNOT, then X and Z</td></tr>
+</tbody></table></div>
+<div class="callout trap"><span class="title">⚠️ Entanglement doesn't send messages</span>Measuring one qubit of a Bell pair instantly tells you the other's result, even light-years away, but you can't <em>choose</em> the outcome, so no information travels faster than light (the no-signalling theorem). Entanglement is a <em>resource</em>: it powers teleportation, superdense coding, quantum key distribution and the speed-ups of quantum algorithms. Bell-test experiments show its correlations can't be explained by hidden pre-agreed values.</div>
+
+<!-- ============================================================ -->
+<h2 id="lab" data-nav="10. Circuit lab" data-keywords="circuit simulator state vector interactive bell ghz grover">10. Circuit lab: build and simulate</h2>
+<p>A quantum <strong>circuit</strong> reads left to right: horizontal lines are qubits (all starting in |0⟩), boxes are gates, and the meter symbols at the end are measurements. This lab runs an exact state-vector simulation of 3 qubits in your browser.</p>
+<div class="qdemo" id="lab-demo">
+  <div class="lab-controls">
+    <label>Gate <select id="lab-gate"><option>H</option><option>X</option><option>Y</option><option>Z</option><option>S</option><option>T</option><option value="CNOT">CNOT</option><option value="CZ">CZ</option></select></label>
+    <span id="lab-control-wrap"><label>control <select id="lab-control"><option value="0">q0</option><option value="1">q1</option><option value="2">q2</option></select></label></span>
+    <label>target <select id="lab-target"><option value="0">q0</option><option value="1" selected>q1</option><option value="2">q2</option></select></label>
+    <button class="btn" type="button" id="lab-add">Add gate</button>
+    <button class="gbtn alt" type="button" id="lab-undo">Undo</button>
+    <button class="gbtn alt" type="button" id="lab-clear">Clear</button>
+    <span id="lab-msg" aria-live="polite"></span>
+  </div>
+  <div class="lab-controls"><span>Examples:</span>
+    <button class="gbtn alt" type="button" data-lpreset="bell">Bell pair</button>
+    <button class="gbtn alt" type="button" data-lpreset="ghz">GHZ (3 entangled)</button>
+    <button class="gbtn alt" type="button" data-lpreset="uniform">H on all</button>
+    <button class="gbtn alt" type="button" data-lpreset="interfere">H·H interference</button>
+    <button class="gbtn alt" type="button" data-lpreset="phase">H·Z·H = X</button>
+    <button class="gbtn alt" type="button" data-lpreset="grover">Grover finds |11⟩</button>
+  </div>
+  <div class="lab-scroll"><svg id="lab-svg" role="img" aria-label="Current circuit diagram"></svg></div>
+  <p id="lab-ops"></p>
+  <div class="table-wrap"><table id="lab-table"></table></div>
+  <div class="btnrow"><button class="btn" type="button" id="lab-shots">Run 1000 shots</button></div>
+  <p class="qnote">Basis states are written <span class="ket">|q2 q1 q0⟩</span>, with q0 on the right (the same convention as Qiskit). The amplitude column is what a simulator sees; a real device only ever gives you the shot counts. If the only non-zero amplitude is −1 (as after Grover), that minus sign is a global phase: physically identical to +1.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="rules" data-nav="11. Rules of the quantum world" data-keywords="no cloning reversibility unitarity no signalling teleportation">11. The rules of the game</h2>
+<div class="grid">
+  <div class="card"><h4>📵 No-cloning</h4><p>There's no operation that copies an unknown quantum state. You can't back up a qubit or fan it out like a classical wire. This is why quantum error correction is so different, and why quantum key distribution can detect eavesdroppers.</p></div>
+  <div class="card"><h4>↩️ Reversibility</h4><p>Every gate is unitary and can be undone. Only measurement (and noise) is irreversible. Classical logic inside quantum algorithms must also be made reversible, often using extra "ancilla" qubits.</p></div>
+  <div class="card"><h4>👁️ Observation disturbs</h4><p>Measuring, or any uncontrolled interaction with the environment, collapses superpositions. Qubits must be extremely well isolated, yet still controllable.</p></div>
+  <div class="card"><h4>📡 Teleportation</h4><p>With one shared Bell pair plus two classical bits, a qubit's state can be moved to a distant qubit. The original is destroyed (consistent with no-cloning), and nothing travels faster than light.</p></div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="noise" data-nav="12. Noise & error correction" data-keywords="decoherence T1 T2 noise fidelity error correction surface code logical qubit NISQ fault tolerance threshold">12. Noise, decoherence and error correction</h2>
+<p>Real qubits are fragile. Tiny interactions with the environment, such as heat, stray fields or vibrations, gradually destroy the quantum information. This is <strong>decoherence</strong>.</p>
+<figure class="diagram">
+<svg class="anim" data-still="3.5" viewBox="0 0 760 220" role="img" aria-label="Animation: a qubit's state vector precesses around the equator while its length shrinks to zero, showing loss of phase coherence; a graph shows coherence decaying exponentially, with T2 marked where it falls to 37 percent.">
+  <defs><marker id="dc-ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker></defs>
+  <circle class="box" cx="160" cy="105" r="90"/>
+  <line x1="70" y1="105" x2="250" y2="105" style="stroke:var(--border);stroke-dasharray:3 4"/><line x1="160" y1="15" x2="160" y2="195" style="stroke:var(--border);stroke-dasharray:3 4"/>
+  <g><animateTransform attributeName="transform" type="rotate" from="0 160 105" to="360 160 105" dur="3s" repeatCount="indefinite"/>
+    <line x1="160" y1="105" x2="250" y2="105" class="line-accent" style="stroke-width:3" marker-end="url(#dc-ar)"><animate attributeName="x2" values="250;250;162;162" keyTimes="0;0.1;0.85;1" dur="9s" repeatCount="indefinite"/></line>
+  </g>
+  <text x="160" y="214" text-anchor="middle" class="lbl">equator seen from above: phase information fades</text>
+  <line x1="360" y1="180" x2="725" y2="180" style="stroke:var(--muted)"/><line x1="360" y1="25" x2="360" y2="180" style="stroke:var(--muted)"/>
+  <text x="368" y="22" class="lbl">coherence</text><text x="725" y="198" text-anchor="end" class="lbl">time →</text>
+  <polyline points="360,30 396,89 432,125 468,147 504,160 576,173 648,177 720,179" style="fill:none;stroke:var(--info);stroke-width:2.2"/>
+  <line x1="432" y1="125" x2="432" y2="180" style="stroke:var(--warn);stroke-dasharray:3 3"/><text x="440" y="120" class="lbl-accent">T₂ (≈37% left)</text>
+  <circle r="6" class="q-sup"><animateMotion dur="9s" repeatCount="indefinite" calcMode="linear" path="M360,30 L396,89 L432,125 L468,147 L504,160 L576,173 L648,177 L720,179"/></circle>
+</svg>
+<figcaption>Dephasing (T₂) scrambles the relative phase, so the Bloch vector shrinks toward the axis. Energy relaxation (T₁) makes |1⟩ decay to |0⟩. Every gate must finish well within these times.</figcaption>
+</figure>
+<div class="table-wrap"><table>
+<thead><tr><th>Error source</th><th>What happens</th><th>Typical metric</th></tr></thead>
+<tbody>
+<tr><td>Energy relaxation</td><td>|1⟩ decays to |0⟩</td><td>T₁ time</td></tr>
+<tr><td>Dephasing</td><td>Relative phase drifts randomly; superpositions lose coherence</td><td>T₂ time (T₂ ≤ 2T₁)</td></tr>
+<tr><td>Gate errors</td><td>Imperfect control pulses rotate slightly too far, or the wrong way</td><td>1- and 2-qubit gate fidelity (e.g. 99.9%)</td></tr>
+<tr><td>Readout errors</td><td>A 0 is reported as 1 or vice versa</td><td>Measurement fidelity</td></tr>
+<tr><td>Crosstalk &amp; leakage</td><td>Operating one qubit disturbs neighbours; the state leaves the 0/1 subspace</td><td>Device-specific</td></tr>
+</tbody></table></div>
+<h3>Quantum error correction</h3>
+<p>You can't copy qubits, but you <em>can</em> spread one <strong>logical qubit</strong> across many <strong>physical qubits</strong> so that errors can be detected without measuring the encoded data. Helper qubits measure <em>parity checks</em> (syndromes), which reveal where an error happened but not the logical value.</p>
+<figure class="diagram">
+<svg viewBox="0 0 760 200" role="img" aria-label="A grid of physical qubits, alternating data qubits and measurement qubits, forming a surface-code patch that encodes one logical qubit.">
+  <g>
+    <circle cx="60" cy="40" r="11" class="q-zero"/><circle cx="100" cy="40" r="9" class="q-det"/><circle cx="140" cy="40" r="11" class="q-zero"/><circle cx="180" cy="40" r="9" class="q-det"/><circle cx="220" cy="40" r="11" class="q-zero"/>
+    <circle cx="60" cy="80" r="9" class="q-det"/><circle cx="100" cy="80" r="11" class="q-zero"/><circle cx="140" cy="80" r="9" class="q-det"/><circle cx="180" cy="80" r="11" class="q-zero"/><circle cx="220" cy="80" r="9" class="q-det"/>
+    <circle cx="60" cy="120" r="11" class="q-zero"/><circle cx="100" cy="120" r="9" class="q-det"/><circle cx="140" cy="120" r="11" class="q-zero"/><circle cx="180" cy="120" r="9" class="q-det"/><circle cx="220" cy="120" r="11" class="q-zero"/>
+    <circle cx="60" cy="160" r="9" class="q-det"/><circle cx="100" cy="160" r="11" class="q-zero"/><circle cx="140" cy="160" r="9" class="q-det"/><circle cx="180" cy="160" r="11" class="q-zero"/><circle cx="220" cy="160" r="9" class="q-det"/>
+  </g>
+  <path class="line-accent" d="M260,100 L360,100" marker-end="url(#dc-ar)"/>
+  <rect class="box-ok" x="370" y="70" width="150" height="60" rx="12"/><text x="445" y="97" text-anchor="middle" font-size="14" font-weight="700">1 logical qubit</text><text x="445" y="117" text-anchor="middle" class="lbl">far lower error rate</text>
+  <text x="545" y="60" class="lbl">● data qubits hold the encoded state</text>
+  <text x="545" y="85" class="lbl">○ measure qubits check parities</text>
+  <text x="545" y="110" class="lbl">a classical decoder infers errors</text>
+  <text x="545" y="135" class="lbl">bigger patch → errors suppressed more,</text>
+  <text x="545" y="152" class="lbl">if physical errors are below threshold</text>
+</svg>
+<figcaption>A surface-code patch (simplified). The threshold theorem says that if every physical operation is better than a threshold (roughly 1% for the surface code), adding qubits makes logical errors exponentially rarer.</figcaption>
+</figure>
+<div class="table-wrap"><table>
+<thead><tr><th>Era</th><th>What it means</th></tr></thead>
+<tbody>
+<tr><td><strong>NISQ</strong> (Noisy Intermediate-Scale Quantum)</td><td>Tens to thousands of physical qubits without full error correction. Circuits must be short; results need error <em>mitigation</em> and many shots.</td></tr>
+<tr><td><strong>Early fault-tolerant</strong></td><td>First logical qubits whose error rates improve as the code grows (experiments since 2023–2024 have shown this "below threshold" behaviour on small codes).</td></tr>
+<tr><td><strong>Fault-tolerant (FTQC)</strong></td><td>Many logical qubits running deep circuits reliably. This is needed for Shor-scale cryptanalysis and most proven speed-ups, and likely requires hundreds to thousands of physical qubits per logical qubit.</td></tr>
+</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="algorithms" data-nav="13. Quantum algorithms" data-keywords="Deutsch Jozsa Bernstein Vazirani Grover Shor QFT phase estimation VQE QAOA simulation speedup">13. Quantum algorithms</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Algorithm</th><th>Solves</th><th>Speed-up vs best known classical</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td><strong>Deutsch–Jozsa / Bernstein–Vazirani</strong></td><td>Toy "oracle" problems</td><td>Exponential (or linear-to-one) in oracle queries</td><td>Teaching examples of interference</td></tr>
+<tr><td><strong>Grover's search</strong></td><td>Find a marked item among N</td><td><strong>Quadratic</strong>: ~√N queries instead of ~N (provably optimal)</td><td>Needs fault tolerance to beat classical in practice</td></tr>
+<tr><td><strong>Quantum Fourier Transform (QFT)</strong></td><td>Fourier transform of amplitudes</td><td>Exponentially fewer gates than a classical FFT on 2ⁿ values</td><td>Subroutine, not a standalone speed-up</td></tr>
+<tr><td><strong>Phase estimation (QPE)</strong></td><td>Eigenvalues of a unitary</td><td>Core of Shor and of chemistry algorithms</td><td>Needs fault tolerance</td></tr>
+<tr><td><strong>Shor's algorithm</strong></td><td>Factoring, discrete logarithms</td><td><strong>Superpolynomial</strong>: polynomial time vs sub-exponential classical</td><td>Breaks RSA/ECC on a large FTQC; far beyond today's machines</td></tr>
+<tr><td><strong>Hamiltonian simulation</strong></td><td>Dynamics of quantum systems (chemistry, materials)</td><td>Exponential for many physical systems</td><td>The most promising long-term application</td></tr>
+<tr><td><strong>VQE / QAOA</strong> (variational)</td><td>Ground states, optimisation</td><td>Heuristic; no proven advantage</td><td>NISQ-era experiments, hybrid with classical optimisers</td></tr>
+<tr><td><strong>HHL</strong> (linear systems)</td><td>Ax = b, in a quantum-encoded form</td><td>Exponential only under strong conditions (data loading, readout)</td><td>Many caveats; "dequantised" classical rivals exist for some cases</td></tr>
+</tbody></table></div>
+<p>Grover's algorithm in one picture: start with equal amplitudes on all N items; the <strong>oracle</strong> flips the sign of the marked item's amplitude; the <strong>diffusion</strong> step reflects every amplitude about the mean, which boosts the marked one. After ~(π/4)√N rounds, the marked item dominates. With N = 4 a single round is exact, as the "Grover finds |11⟩" preset in the circuit lab shows.</p>
+
+<!-- ============================================================ -->
+<h2 id="crypto" data-nav="14. Quantum & cryptography" data-keywords="post-quantum cryptography PQC ML-KEM ML-DSA SLH-DSA FIPS 203 204 205 harvest now decrypt later RSA AES QKD">14. Quantum computing and cryptography</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Cryptography</th><th>Quantum threat</th><th>Response</th></tr></thead>
+<tbody>
+<tr><td>RSA, Diffie–Hellman, elliptic-curve (ECDH, ECDSA)</td><td><strong>Broken</strong> by Shor's algorithm on a large fault-tolerant machine</td><td>Migrate to post-quantum algorithms</td></tr>
+<tr><td>Symmetric ciphers (AES)</td><td>Grover roughly halves the effective key length</td><td>Use 256-bit keys (AES-256)</td></tr>
+<tr><td>Hash functions (SHA-2, SHA-3)</td><td>Modest weakening</td><td>Use adequate output sizes</td></tr>
+</tbody></table></div>
+<ul>
+<li><strong>NIST post-quantum standards (August 2024):</strong> FIPS 203 <b>ML-KEM</b> (key encapsulation, from CRYSTALS-Kyber), FIPS 204 <b>ML-DSA</b> (signatures, from CRYSTALS-Dilithium) and FIPS 205 <b>SLH-DSA</b> (hash-based signatures, from SPHINCS+). They run on ordinary classical computers.</li>
+<li><strong>"Harvest now, decrypt later":</strong> adversaries can record encrypted traffic today and decrypt it once a capable quantum computer exists. Data that must stay secret for many years is already at risk, which is why migration is urgent even though no such machine exists yet.</li>
+<li><strong>Quantum key distribution (QKD)</strong> uses quantum physics itself (no-cloning) to detect eavesdropping on key exchange. It is a different, hardware-based approach from post-quantum algorithms.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="hardware" data-nav="15. Building qubits" data-keywords="hardware superconducting transmon trapped ion neutral atom photonic spin silicon topological DiVincenzo dilution refrigerator">15. Building qubits: the hardware</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Platform</th><th>Qubit is…</th><th>Strengths</th><th>Challenges</th></tr></thead>
+<tbody>
+<tr><td><strong>Superconducting</strong></td><td>A tiny superconducting circuit (e.g. a transmon) cooled to ~10–20 millikelvin in a dilution refrigerator</td><td>Very fast gates (tens of ns), mature chip fabrication</td><td>Short coherence, wiring and cooling at scale, mostly nearest-neighbour connectivity</td></tr>
+<tr><td><strong>Trapped ions</strong></td><td>Individual charged atoms held by electric fields, controlled by lasers</td><td>Very high fidelities, long coherence, all-to-all connectivity within a trap</td><td>Slower gates (µs), scaling to many ions per trap</td></tr>
+<tr><td><strong>Neutral atoms</strong></td><td>Atoms held in optical tweezers, entangled via Rydberg states</td><td>Large, reconfigurable arrays; atoms are identical</td><td>Gate fidelity, atom loss, slower cycle times</td></tr>
+<tr><td><strong>Photonic</strong></td><td>Single photons in waveguides or fibre</td><td>Room-temperature components, natural for networking</td><td>Photon loss, probabilistic entangling operations</td></tr>
+<tr><td><strong>Spin qubits</strong></td><td>Electron or nuclear spins in silicon quantum dots or defects</td><td>Tiny footprint, leverages semiconductor manufacturing</td><td>Uniformity and control at scale</td></tr>
+<tr><td><strong>Topological</strong></td><td>Exotic quasiparticles (e.g. Majorana modes) designed to be intrinsically protected</td><td>Potentially much lower error rates</td><td>Still early-stage research</td></tr>
+</tbody></table></div>
+<h3>DiVincenzo's criteria: what any quantum computer needs</h3>
+<ol class="steps">
+  <li><div><b>Scalable, well-characterised qubits</b><span>You know exactly what your two-level systems are, and you can add more.</span></div></li>
+  <li><div><b>Initialisation</b><span>Reliably reset qubits to a known state such as |0⟩.</span></div></li>
+  <li><div><b>Long coherence relative to gate time</b><span>Many operations must fit within T₁ and T₂.</span></div></li>
+  <li><div><b>A universal set of gates</b><span>Single-qubit rotations plus at least one entangling gate.</span></div></li>
+  <li><div><b>Qubit-specific measurement</b><span>Read out individual qubits accurately.</span></div></li>
+</ol>
+<p class="qnote">For quantum networks, two more criteria cover converting between stationary and "flying" qubits (usually photons) and transmitting them faithfully.</p>
+
+<!-- ============================================================ -->
+<h2 id="code" data-nav="16. Your first quantum program" data-keywords="qiskit python program bell state statevector sampler shots">16. Your first quantum program (Qiskit)</h2>
+<p><a href="https://www.ibm.com/quantum/qiskit" rel="noopener">Qiskit</a> is an open-source Python SDK for building circuits and running them on simulators or real hardware. This program was run with Qiskit 2.5 (<code>pip install qiskit</code>):</p>
+<pre><code><span class="k">from</span> qiskit <span class="k">import</span> QuantumCircuit
+<span class="k">from</span> qiskit.primitives <span class="k">import</span> StatevectorSampler
+<span class="k">from</span> qiskit.quantum_info <span class="k">import</span> Statevector
+
+qc = QuantumCircuit(2)
+qc.h(0)        <span class="c"># put qubit 0 into an equal superposition</span>
+qc.cx(0, 1)    <span class="c"># entangle: flip qubit 1 when qubit 0 is 1</span>
+
+print(Statevector.from_instruction(qc))     <span class="c"># amplitudes before measurement</span>
+print(qc.draw())
+
+qc.measure_all()
+result = StatevectorSampler().run([qc], shots=1000).result()
+print(result[0].data.meas.get_counts())     <span class="c"># only '00' and '11', roughly 50/50</span></code></pre>
+<pre><code><span class="c">$ python bell.py</span>
+Statevector([0.70710678+0.j, 0.        +0.j, 0.        +0.j,
+             0.70710678+0.j],
+            dims=(2, 2))
+     ┌───┐
+q_0: ┤ H ├──■──
+     └───┘┌─┴─┐
+q_1: ─────┤ X ├
+          └───┘
+{'00': 476, '11': 524}</code></pre>
+<ol class="steps">
+  <li><div><b>Build</b><span>Describe the circuit: qubits, gates and measurements.</span></div></li>
+  <li><div><b>Transpile</b><span>For real hardware, the circuit is rewritten into the device's native gates and qubit connectivity, which adds SWAPs and changes depth.</span></div></li>
+  <li><div><b>Run</b><span>Execute many shots on a simulator or a quantum processor (cloud access via providers such as IBM Quantum, Amazon Braket or Azure Quantum).</span></div></li>
+  <li><div><b>Analyse</b><span>Turn counts into probabilities or expectation values; apply error mitigation on real hardware.</span></div></li>
+</ol>
+
+<!-- ============================================================ -->
+<h2 id="myths" data-nav="17. Myths vs reality" data-keywords="myths misconceptions parallel universes faster at everything">17. Myths vs reality</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Myth</th><th>Reality</th></tr></thead>
+<tbody>
+<tr><td>"A quantum computer tries every answer in parallel and picks the best."</td><td>It evolves amplitudes over all inputs, but measurement returns one random outcome. Only interference that favours the answer makes this useful.</td></tr>
+<tr><td>"Quantum computers will replace classical computers."</td><td>They'll be specialised co-processors working alongside classical systems, which also handle control, decoding and pre- and post-processing.</td></tr>
+<tr><td>"More qubits means more power."</td><td>Quality matters as much as quantity: error rates, coherence, connectivity and the number of <em>logical</em> qubits decide what you can run.</td></tr>
+<tr><td>"Quantum computers can solve NP-complete problems efficiently."</td><td>Not believed to be true. Grover gives only a quadratic speed-up for brute-force search.</td></tr>
+<tr><td>"Entanglement allows faster-than-light communication."</td><td>No. Outcomes are random, and correlations only appear when results are compared over a classical channel.</td></tr>
+<tr><td>"Encryption is already broken."</td><td>Not by any existing machine. But "harvest now, decrypt later" makes migrating to post-quantum cryptography urgent for long-lived secrets.</td></tr>
+</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="glossary" data-nav="Glossary" data-keywords="glossary terms definitions">Glossary</h2>
+<div class="table-wrap"><table>
+<tbody>
+<tr><td><b>Amplitude</b></td><td>Complex number attached to each basis state; |amplitude|² is its measurement probability.</td></tr>
+<tr><td><b>Basis state</b></td><td>A classical-looking state such as |0⟩, |1⟩ or |101⟩.</td></tr>
+<tr><td><b>Bloch sphere</b></td><td>Geometric picture of a single-qubit state as a point on a sphere.</td></tr>
+<tr><td><b>Circuit depth</b></td><td>The number of sequential gate layers; deeper circuits suffer more noise.</td></tr>
+<tr><td><b>Coherence time (T₁, T₂)</b></td><td>How long a qubit keeps its energy state (T₁) and its phase (T₂).</td></tr>
+<tr><td><b>Entanglement</b></td><td>Correlation between qubits that can't be described qubit by qubit.</td></tr>
+<tr><td><b>Fidelity</b></td><td>How close an actual operation or state is to the ideal one (1 = perfect).</td></tr>
+<tr><td><b>Logical qubit</b></td><td>An error-corrected qubit encoded across many physical qubits.</td></tr>
+<tr><td><b>Oracle</b></td><td>A black-box subroutine that marks solutions (e.g. by flipping a phase).</td></tr>
+<tr><td><b>Shot</b></td><td>One execution of a circuit ending in measurement.</td></tr>
+<tr><td><b>Superposition</b></td><td>A state that is a weighted combination of basis states.</td></tr>
+<tr><td><b>Unitary</b></td><td>A reversible, probability-preserving operation, i.e. a quantum gate.</td></tr>
+</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="quiz" data-nav="Self-check quiz">Self-check quiz</h2>
+<p class="quiz-score">Score: 0 / 0 answered</p>
+<div class="quiz" data-answer="b">
+  <div class="q">1 · A qubit is in the state 0.6|0⟩ + 0.8|1⟩. What is the probability of measuring 1?</div>
+  <div class="opts"><button class="opt" data-k="a">A. 0.8</button><button class="opt" data-k="b">B. 0.64</button><button class="opt" data-k="c">C. 0.36</button><button class="opt" data-k="d">D. 0.5</button></div>
+  <div class="why"><b>B.</b> Probability = |amplitude|² = 0.8² = 0.64 (and 0.6² = 0.36 for 0; they sum to 1).</div>
+</div>
+<div class="quiz" data-answer="d">
+  <div class="q">2 · |+⟩ and |−⟩ give 50/50 results when measured in the 0/1 basis. How can you tell them apart?</div>
+  <div class="opts"><button class="opt" data-k="a">A. You can't; they are the same state</button><button class="opt" data-k="b">B. Measure many more times in the 0/1 basis</button><button class="opt" data-k="c">C. Apply X first</button><button class="opt" data-k="d">D. Apply H first: |+⟩ becomes |0⟩ and |−⟩ becomes |1⟩</button></div>
+  <div class="why"><b>D.</b> They differ in relative phase. Interference (H) converts that phase difference into a measurable probability difference.</div>
+</div>
+<div class="quiz" data-answer="a">
+  <div class="q">3 · What does H applied twice to |0⟩ give?</div>
+  <div class="opts"><button class="opt" data-k="a">A. |0⟩, because the |1⟩ contributions cancel</button><button class="opt" data-k="b">B. |1⟩</button><button class="opt" data-k="c">C. |+⟩</button><button class="opt" data-k="d">D. A random result</button></div>
+  <div class="why"><b>A.</b> H·H = I. This is destructive interference in action, just like the interferometer where D1 never clicks.</div>
+</div>
+<div class="quiz" data-answer="c">
+  <div class="q">4 · After H on q0 then CNOT(q0→q1), which outcomes can you measure?</div>
+  <div class="opts"><button class="opt" data-k="a">A. 00, 01, 10, 11 equally</button><button class="opt" data-k="b">B. Only 00</button><button class="opt" data-k="c">C. Only 00 and 11, each about half the time</button><button class="opt" data-k="d">D. Only 01 and 10</button></div>
+  <div class="why"><b>C.</b> It's the Bell state (|00⟩ + |11⟩)/√2: random but perfectly correlated.</div>
+</div>
+<div class="quiz" data-answer="b">
+  <div class="q">5 · Why can't you simply copy a qubit to protect it from errors?</div>
+  <div class="opts"><button class="opt" data-k="a">A. Copying is allowed but too slow</button><button class="opt" data-k="b">B. The no-cloning theorem forbids copying unknown quantum states; error correction spreads information across entangled qubits instead</button><button class="opt" data-k="c">C. Qubits are too small to copy</button><button class="opt" data-k="d">D. Copying would break the speed of light</button></div>
+  <div class="why"><b>B.</b> Quantum error correction measures parity checks (syndromes) that reveal errors without revealing or copying the encoded data.</div>
+</div>
+<div class="quiz" data-answer="d">
+  <div class="q">6 · How many complex amplitudes describe a general state of 20 qubits?</div>
+  <div class="opts"><button class="opt" data-k="a">A. 20</button><button class="opt" data-k="b">B. 40</button><button class="opt" data-k="c">C. 400</button><button class="opt" data-k="d">D. 2²⁰ ≈ 1 million</button></div>
+  <div class="why"><b>D.</b> Each extra qubit doubles the state space. That's why exact classical simulation hits a wall around 45–50 qubits.</div>
+</div>
+<div class="quiz" data-answer="a">
+  <div class="q">7 · Which cryptography does Shor's algorithm threaten?</div>
+  <div class="opts"><button class="opt" data-k="a">A. RSA and elliptic-curve public-key cryptography</button><button class="opt" data-k="b">B. AES-256 symmetric encryption</button><button class="opt" data-k="c">C. One-time pads</button><button class="opt" data-k="d">D. ML-KEM (FIPS 203)</button></div>
+  <div class="why"><b>A.</b> Shor solves factoring and discrete logarithms efficiently. AES is only weakened by Grover (use 256-bit keys), and ML-KEM is designed to resist quantum attacks.</div>
+</div>
+<div class="quiz" data-answer="c">
+  <div class="q">8 · Grover's algorithm searches N unsorted items in roughly how many queries?</div>
+  <div class="opts"><button class="opt" data-k="a">A. log N</button><button class="opt" data-k="b">B. 1</button><button class="opt" data-k="c">C. √N</button><button class="opt" data-k="d">D. N / 2</button></div>
+  <div class="why"><b>C.</b> A quadratic speed-up, and provably the best possible for unstructured search.</div>
+</div>
+
+<nav class="pager">
+  <a href="../index.html">← Home</a>
+  <a href="claude-code.html">Next: Claude Code →</a>
+</nav>
+<footer class="site">Quantum Computing · quantumcompute.world · personal study notes</footer>
+
+</article>
+</main>
+<script src="../assets/site.js"></script>
+<script src="../assets/quantum.js"></script>
+</body>
+</html>

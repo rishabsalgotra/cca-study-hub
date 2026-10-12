@@ -1,0 +1,74 @@
+/* Topic: Quantum computing basics — interactive demo styles (uses the site's light/dark tokens). */
+.qdemo { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem 1.1rem; margin: 0 0 1.2rem; }
+.qdemo h4 { margin: 0 0 .6rem; }
+.qgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 760px) { .qgrid { grid-template-columns: minmax(0, 1fr); } }
+.qdemo svg { width: 100%; height: auto; display: block; }
+.qctrl { display: grid; gap: .55rem; font-size: 14px; }
+.qctrl label { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; }
+.qctrl input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+.qctrl output, .qval { font: 600 13px var(--mono); }
+.btnrow { display: flex; flex-wrap: wrap; gap: 6px; }
+.gbtn { font: 700 13.5px var(--mono); min-width: 40px; padding: .35rem .6rem; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); cursor: pointer; }
+.gbtn:hover { border-color: var(--accent); }
+.gbtn:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gbtn.alt { font-family: var(--font); font-weight: 600; }
+.readout { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center; font-size: 14px; margin-top: .4rem; }
+.pbar { height: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; min-width: 60px; }
+.pbar span { display: block; height: 100%; background: var(--accent); transition: width .15s; }
+.pbar.alt span { background: var(--info); }
+.pbar.ok span { background: var(--ok); }
+.qnote { font-size: 13.5px; color: var(--muted); margin: .5rem 0 0; }
+.ket { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
+
+/* Bloch sphere */
+#bloch-svg .bl-outline { fill: none; stroke: var(--muted); stroke-width: 1.4; }
+#bloch-svg .bl-front { fill: none; stroke: var(--muted); stroke-width: 1.2; }
+#bloch-svg .bl-back { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 4; opacity: .55; }
+#bloch-svg .bl-faint { opacity: .45; }
+#bloch-svg .bl-axis { fill: none; stroke: var(--border); stroke-width: 1.2; stroke-dasharray: 2 4; }
+#bloch-svg .bl-lbl { font: 13px var(--mono); fill: var(--muted); }
+#bloch-svg .bl-lbl.strong { fill: var(--text); font-weight: 700; font-size: 15px; }
+#bloch-svg .bl-vec { stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
+#bloch-svg .bl-dot { fill: var(--accent); }
+#bloch-svg .bl-proj { fill: none; stroke: var(--info); stroke-width: 1.2; stroke-dasharray: 3 3; }
+#bloch-svg .bl-center { fill: var(--muted); }
+
+/* Interference phasors */
+#itf .ph-a { stroke: var(--accent); stroke-width: 3; }
+#itf .ph-b { stroke: var(--info); stroke-width: 3; }
+#itf .ph-r { stroke: var(--ok); stroke-width: 4; opacity: .85; }
+#itf .ph-axis { stroke: var(--border); stroke-width: 1; }
+#itf text { font: 12px var(--font); fill: var(--muted); }
+#itf .ph-title { font-weight: 700; fill: var(--text); font-size: 13px; }
+
+/* Circuit lab */
+.lab-controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; font-size: 14px; margin-bottom: .6rem; }
+.lab-controls select { font: 600 13.5px var(--font); background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 7px; padding: .3rem .4rem; }
+.lab-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); margin-bottom: .6rem; }
+#lab-svg { display: block; width: 100%; height: auto; }
+#lab-svg .lab-wire { stroke: var(--muted); stroke-width: 1.4; }
+#lab-svg .lab-q { font: 600 13px var(--mono); fill: var(--text); }
+#lab-svg .lab-gate { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+#lab-svg .lab-gate.g-H { fill: var(--info-soft); stroke: var(--info); }
+#lab-svg .lab-gate.g-X, #lab-svg .lab-gate.g-Y, #lab-svg .lab-gate.g-Z { fill: var(--ok-soft); stroke: var(--ok); }
+#lab-svg .lab-gtxt { font: 700 14px var(--mono); fill: var(--text); }
+#lab-svg .lab-ctrl { fill: var(--text); }
+#lab-svg .lab-targ { fill: var(--surface); stroke: var(--text); stroke-width: 1.6; }
+#lab-svg .lab-link { stroke: var(--text); stroke-width: 1.6; fill: none; }
+#lab-svg .lab-meas { fill: var(--surface); stroke: var(--border); }
+#lab-table td.num { font: 13px var(--mono); text-align: right; white-space: nowrap; }
+#lab-table tr:not(.nz) td { color: var(--muted); }
+#lab-table tr.nz td:first-child code { border-color: var(--accent); }
+#lab-ops { font: 12.5px var(--mono); color: var(--muted); margin: 0 0 .6rem; }
+#lab-msg { color: var(--bad); font-size: 13px; }
+
+/* Matrices and small tables */
+.mat { display: inline-grid; grid-template-columns: repeat(2, auto); gap: 0 12px; padding: 2px 8px; border-left: 2px solid var(--muted); border-right: 2px solid var(--muted); border-radius: 4px; font: 12.5px var(--mono); vertical-align: middle; }
+.mat.wide { grid-template-columns: repeat(4, auto); }
+.mat span { text-align: center; }
+.diagram svg .q-sup { fill: var(--info); }
+.diagram svg .q-zero { fill: var(--accent); }
+.diagram svg .q-det { fill: var(--surface-2); stroke: var(--border); }
+.diagram svg .q-lit { fill: var(--ok); }
+.diagram svg .q-mono { font-family: var(--mono); font-size: 13px; }

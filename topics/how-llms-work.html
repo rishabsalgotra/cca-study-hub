@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How LLMs Work</title>
+<link rel="canonical" href="https://www.quantumcompute.world/topics/how-llms-work.html">
 <meta name="description" content="The step-by-step journey from a user's text to an LLM response: chat templates, tokenization, embeddings, positions, attention, transformer layers, logits, sampling, the autoregressive loop, KV cache and stop conditions.">
 <link rel="stylesheet" href="../assets/style.css">
 </head>
@@ -11,7 +12,7 @@
 <main>
 <article class="content">
 
-<div class="eyebrow">Topic 2 · Foundations</div>
+<div class="eyebrow">Topic 3 · Foundations</div>
 <h1>How LLMs work: from your text to the model's reply</h1>
 <p class="lede">Follow a single prompt through the whole pipeline: text becomes tokens, tokens become vectors, vectors pass through dozens of transformer layers, and a probability distribution produces the next token. That step repeats until the model stops. Once you see the pipeline, things like token limits, temperature, prompt caching, <code>stop_reason</code> and "lost in the middle" make sense.</p>
 <div class="meta-row">
@@ -461,7 +462,7 @@ probs  = softmax(logits / T)   all positive, sum to 1</code></pre>
   <a href="claude-code.html">← Claude Code</a>
   <a href="agentic-architecture.html">Agentic Architecture →</a>
 </nav>
-<footer class="site">CCA Study Hub · personal study notes · not an official Anthropic resource</footer>
+<footer class="site">Quantum Computing · quantumcompute.world · personal study notes · not an official Anthropic resource</footer>
 
 </article>
 </main>
