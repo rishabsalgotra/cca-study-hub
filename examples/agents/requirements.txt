@@ -1,0 +1,4 @@
+anthropic>=1.13
+mcp>=2.3
+claude-agent-sdk>=0.2
+pytest>=8

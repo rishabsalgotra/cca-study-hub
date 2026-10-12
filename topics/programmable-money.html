@@ -11,7 +11,7 @@
 <main>
 <article class="content">
 
-<div class="eyebrow">Topic 3 · Fintech</div>
+<div class="eyebrow">Topic 6 · Fintech</div>
 <h1>Programmable money: tokenized deposits &amp; stablecoins</h1>
 <p class="lede">Programmable money is money that carries its own rules. Instead of a person or a back-office batch job deciding when a payment happens, code on a shared ledger releases, holds, splits, or returns funds automatically when agreed conditions are met. This page explains the idea from first principles, compares the two variants banks actually use (<strong>tokenized deposits</strong> and <strong>stablecoins</strong>), shows how to build them, and walks through tested smart contracts for real use cases.</p>
 <div class="meta-row">
@@ -1286,7 +1286,7 @@ describe("Programmable money", function () {
 </div>
 
 <nav class="pager">
-  <a href="how-llms-work.html">← How LLMs Work</a>
+  <a href="harness-engineering.html">← Harness Engineering</a>
   <a href="../index.html">Home →</a>
 </nav>
 <footer class="site">CCA Study Hub · personal study notes · not an official Anthropic resource · not financial or legal advice</footer>
@@ -1294,26 +1294,6 @@ describe("Programmable money", function () {
 </article>
 </main>
 <script>
-/* Animated diagrams: play/pause button; start paused for reduced-motion users */
-(function () {
-  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  document.querySelectorAll("figure.diagram svg.anim").forEach((svg) => {
-    const cap = svg.closest("figure").querySelector("figcaption");
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "anim-btn";
-    const set = (playing) => {
-      playing ? svg.unpauseAnimations() : svg.pauseAnimations();
-      btn.textContent = playing ? "⏸ Pause" : "▶ Play";
-      btn.setAttribute("aria-pressed", String(!playing));
-    };
-    btn.addEventListener("click", () => set(svg.animationsPaused()));
-    cap.prepend(btn);
-    if (reduce) { svg.setCurrentTime(parseFloat(svg.dataset.still) || 0); set(false); }
-    else set(true);
-  });
-})();
-
 /* Escrow simulator: mirrors TradeEscrow + the two token contracts */
 (function () {
   const $ = (id) => document.getElementById(id);

@@ -11,9 +11,10 @@ const SITE = { title: "CCA Study Hub", subtitle: "Claude Certified Architect –
 const TOPICS = [
   { id: "claude-code", title: "Claude Code", href: "topics/claude-code.html", icon: "⌘", group: "Topics", ready: true, domain: "D1 · D2 · D5" },
   { id: "how-llms-work", title: "How LLMs Work", href: "topics/how-llms-work.html", icon: "◇", group: "Topics", ready: true, domain: "Foundations" },
+  { id: "agentic-architecture", title: "Agentic Architecture", href: "topics/agentic-architecture.html", icon: "⟳", group: "Topics", ready: true, domain: "D1" },
+  { id: "tools-mcp", title: "Tool Design & MCP", href: "topics/tools-mcp.html", icon: "⚙", group: "Topics", ready: true, domain: "D4" },
+  { id: "harness-engineering", title: "Harness Engineering", href: "topics/harness-engineering.html", icon: "⛭", group: "Topics", ready: true, domain: "D1 · D2 · D5" },
   { id: "programmable-money", title: "Programmable Money", href: "topics/programmable-money.html", icon: "$", group: "Fintech", ready: true, domain: "Fintech" },
-  { id: "agentic-architecture", title: "Agentic Architecture", href: "topics/agentic-architecture.html", icon: "⟳", group: "Coming next", ready: false, domain: "D1" },
-  { id: "tools-mcp", title: "Tool Design & MCP", href: "topics/tools-mcp.html", icon: "⚙", group: "Coming next", ready: false, domain: "D4" },
   { id: "prompt-engineering", title: "Prompt Eng. & Structured Output", href: "topics/prompt-engineering.html", icon: "✎", group: "Coming next", ready: false, domain: "D3" },
   { id: "context-reliability", title: "Context & Reliability", href: "topics/context-reliability.html", icon: "◎", group: "Coming next", ready: false, domain: "D5" },
 ];
@@ -144,6 +145,25 @@ const TOPICS = [
       setTimeout(() => (btn.textContent = "Copy"), 1400);
     });
     pre.appendChild(btn);
+  });
+
+  /* ---- Animated SVG diagrams: <figure class="diagram"><svg class="anim" data-still="secs"> ----
+     Adds a play/pause button to the caption; starts paused (at data-still) for reduced-motion users. */
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  document.querySelectorAll("figure.diagram svg.anim").forEach(svg => {
+    const cap = svg.closest("figure").querySelector("figcaption");
+    if (!cap || typeof svg.pauseAnimations !== "function") return;
+    const btn = document.createElement("button");
+    btn.type = "button"; btn.className = "anim-btn";
+    const set = (playing) => {
+      playing ? svg.unpauseAnimations() : svg.pauseAnimations();
+      btn.textContent = playing ? "⏸ Pause" : "▶ Play";
+      btn.setAttribute("aria-pressed", String(!playing));
+    };
+    btn.addEventListener("click", () => set(svg.animationsPaused()));
+    cap.prepend(btn);
+    if (reduceMotion) { svg.setCurrentTime(parseFloat(svg.dataset.still) || 0); set(false); }
+    else set(true);
   });
 
   /* ---- Quizzes: <div class="quiz" data-answer="b"> with button.opt[data-k] ---- */

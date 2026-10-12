@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": ["Read", "Grep", "Glob", "Bash(npm test:*)", "Bash(git diff:*)", "Bash(git status)"],
+    "ask": ["Bash(git push:*)", "WebFetch"],
+    "deny": ["Read(./.env)", "Read(./secrets/**)", "Bash(curl:*)"]
+  },
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "python3 .claude/hooks/block_dangerous.py" }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": "jq -r '.tool_input.file_path' | xargs npx prettier --write" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "python3 .claude/hooks/stop_until_tests_pass.py" }] }
+    ]
+  }
+}

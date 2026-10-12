@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harness Engineering</title>
+<meta name="description" content="Harness engineering: everything around the model that turns it into a reliable agent — the control loop, context assembly and caching, append-only transcripts, permissions, hooks, sandboxing, verification loops, long-running agents, observability and evals, with animated diagrams and a tested mini harness.">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-root=".." data-topic="harness-engineering">
+<main>
+<article class="content">
+
+<div class="eyebrow">Topic 5 · Domains D1 · D2 · D5</div>
+<h1>Harness engineering: the system around the model</h1>
+<p class="lede">The model proposes; the <strong>harness</strong> disposes. A harness is all the code and configuration around an LLM: the loop that calls it, the context it sees, the tools it may use, the permissions that gate them, the checks that verify its work, and the traces that tell you what happened. With the same model, the harness often decides whether an agent is a toy or a teammate. This page builds one up, from concepts to a tested ~200-line implementation.</p>
+<div class="meta-row">
+  <span class="pill"><b>D1 · D2 · D5</b> loop, configuration, reliability</span>
+  <span class="pill"><b>3</b> animated diagrams</span>
+  <span class="pill"><b>17</b> offline tests behind the code</span>
+  <span class="pill">≈ 80 min read</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="what" data-nav="1. What is a harness?" data-keywords="harness definition model engine car scaffolding agent = model + harness">1. What is a harness?</h2>
+<div class="callout"><span class="title">The one-line definition</span><strong>Agent = Model + Harness.</strong> The model is the engine. The harness is everything else that makes it a car you can trust on a road: steering (the loop), fuel (context), controls (tools), brakes (permissions and budgets), dashboard (traces), and inspection (verification and evals).</div>
+
+<figure class="diagram">
+<svg class="anim" data-still="2.2" viewBox="0 0 760 275" role="img" aria-label="Animated pipeline: a task enters the context builder, goes to the model, a tool request passes through the policy gate to the sandboxed executor, the result returns to the context builder, and when the model finishes, a verifier checks the work before it is done; failed checks loop back as feedback.">
+  <defs><marker id="he1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker></defs>
+  <path class="line" d="M130,62 L168,62" marker-end="url(#he1)"/>
+  <path class="line" d="M320,62 L358,62" marker-end="url(#he1)"/>
+  <path class="line" d="M490,62 L528,62" marker-end="url(#he1)"/>
+  <path class="line" d="M630,62 L663,62" marker-end="url(#he1)"/>
+  <path class="line" d="M425,90 L425,188" marker-end="url(#he1)"/>
+  <path class="line" d="M360,220 L322,220" marker-end="url(#he1)"/>
+  <path class="line" d="M245,190 L245,92" marker-end="url(#he1)"/>
+  <path class="line-bad dash" d="M580,35 L580,15 L245,15 L245,33" marker-end="url(#he1)"/>
+  <text x="412" y="11" text-anchor="middle" class="lbl-bad">checks fail → feedback, keep working</text>
+  <text x="433" y="145" class="lbl-accent">tool_use</text>
+  <text x="341" y="266" text-anchor="middle" class="lbl-ok">allowed</text>
+  <text x="237" y="136" text-anchor="end" class="lbl">result: capped,</text>
+  <text x="237" y="152" text-anchor="end" class="lbl">redacted, logged</text>
+  <circle r="7" class="coin">
+    <animateMotion dur="9s" repeatCount="indefinite" path="M75,62 L245,62 L425,62 L425,220 L245,220 L245,62 L425,62 L580,62 L705,62"/>
+  </circle>
+  <rect class="box" x="20" y="35" width="110" height="55" rx="10"/>
+  <text x="75" y="60" text-anchor="middle" font-size="13.5" font-weight="700">Task</text>
+  <text x="75" y="78" text-anchor="middle" class="lbl">user / trigger</text>
+  <rect class="box-info" x="170" y="35" width="150" height="55" rx="10"/>
+  <text x="245" y="60" text-anchor="middle" font-size="13.5" font-weight="700">Context builder</text>
+  <text x="245" y="78" text-anchor="middle" class="lbl">prompt · memory · cache</text>
+  <rect class="box-accent" x="360" y="35" width="130" height="55" rx="10"/>
+  <text x="425" y="60" text-anchor="middle" font-size="13.5" font-weight="700">Model</text>
+  <text x="425" y="78" text-anchor="middle" class="lbl">proposes actions</text>
+  <rect class="box-info" x="530" y="35" width="100" height="55" rx="10"/>
+  <text x="580" y="60" text-anchor="middle" font-size="13.5" font-weight="700">Verifier</text>
+  <text x="580" y="78" text-anchor="middle" class="lbl">tests · checks</text>
+  <rect class="box-ok" x="665" y="35" width="80" height="55" rx="10"/>
+  <text x="705" y="67" text-anchor="middle" font-size="13.5" font-weight="700">Done</text>
+  <rect class="box-info" x="360" y="190" width="130" height="60" rx="10"/>
+  <text x="425" y="215" text-anchor="middle" font-size="13.5" font-weight="700">Policy gate</text>
+  <text x="425" y="235" text-anchor="middle" class="lbl">hooks · permissions</text>
+  <rect class="box-info" x="170" y="190" width="150" height="60" rx="10"/>
+  <text x="245" y="215" text-anchor="middle" font-size="13.5" font-weight="700">Executor</text>
+  <text x="245" y="235" text-anchor="middle" class="lbl">sandboxed tools</text>
+</svg>
+<figcaption>Only the orange box is the model. Every blue box is harness code you own. A denied call at the gate goes back to the model as an error result, so it can choose another way.</figcaption>
+</figure>
+
+<h3>Why harness engineering matters</h3>
+<ul>
+<li><strong>The same model gives very different results in different harnesses.</strong> Agent benchmark scores depend heavily on the scaffold: the tools offered, how errors are reported, and when the agent is allowed to stop.</li>
+<li><strong>Reliability lives in the harness.</strong> Budgets, approvals, sandboxes, and verification are code. The model can't promise them.</li>
+<li><strong>Cost and latency live in the harness.</strong> Caching, context hygiene, and model routing are harness decisions.</li>
+<li><strong>Harnesses are what you can change today.</strong> You can't retrain the model, but you can ship a better harness this afternoon.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="anatomy" data-nav="2. Anatomy of a harness" data-keywords="components loop context tools permissions hooks memory sandbox observability claude code">2. Anatomy of a harness</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Component</th><th>Job</th><th>In Claude Code</th><th>In your own harness</th></tr></thead>
+<tbody>
+<tr><td><strong>Control loop</strong></td><td>Call the model, dispatch tools, decide when to stop</td><td>The agent loop, <code>max_turns</code>, interrupts</td><td><code>while</code> loop on <code>stop_reason</code>, or the SDK tool runner</td></tr>
+<tr><td><strong>Context assembly</strong></td><td>Build what the model sees each turn</td><td>System prompt + <code>CLAUDE.md</code> + history + tool results</td><td>Frozen system prompt, append-only messages</td></tr>
+<tr><td><strong>Context management</strong></td><td>Stay within the window and keep it high-signal</td><td>Auto-compact, <code>/compact</code>, <code>/clear</code>, subagents</td><td>Server-side compaction, context editing, output caps</td></tr>
+<tr><td><strong>Tools</strong></td><td>What the agent can do</td><td>Read, Edit, Bash, Grep, WebFetch, MCP servers</td><td>Your functions, MCP, Anthropic tools</td></tr>
+<tr><td><strong>Permissions</strong></td><td>What it may do without asking</td><td><code>settings.json</code> allow/ask/deny, permission modes</td><td>Policy per tool and risk level</td></tr>
+<tr><td><strong>Hooks</strong></td><td>Deterministic code at lifecycle events</td><td><code>PreToolUse</code>, <code>PostToolUse</code>, <code>Stop</code>, <code>SessionStart</code>…</td><td>Pre/post callbacks around every tool</td></tr>
+<tr><td><strong>Sandbox</strong></td><td>Contain the blast radius</td><td>Filesystem and network sandboxing, devcontainers</td><td>Containers, read-only mounts, egress allowlists</td></tr>
+<tr><td><strong>Memory</strong></td><td>Persist knowledge across sessions</td><td><code>CLAUDE.md</code> hierarchy, auto-memory</td><td>Files, memory tool, progress notes</td></tr>
+<tr><td><strong>Verification</strong></td><td>Prove the work is right before accepting it</td><td>Tests via Bash, <code>Stop</code> hooks, reviewer subagents</td><td>Checks run on <code>end_turn</code></td></tr>
+<tr><td><strong>Observability</strong></td><td>See what happened and what it cost</td><td>Transcripts, OpenTelemetry metrics, cost reports</td><td>JSONL traces, token and cache metrics</td></tr>
+</tbody></table></div>
+<p>Claude Code is itself a harness, and the <strong>Claude Agent SDK</strong> sells exactly that harness as a library. If you are building on the raw Messages API, every row above is yours to write. Sections 3–8 show how.</p>
+
+<!-- ============================================================ -->
+<h2 id="loop" data-nav="3. The control loop" data-keywords="budgets turns tokens dollars stop conditions max_tokens refusal retries backoff task budget">3. The control loop: when to call, continue, and stop</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Concern</th><th>Good practice</th></tr></thead>
+<tbody>
+<tr><td><strong>Stop conditions</strong></td><td>Finish on <code>end_turn</code> <em>after verification</em>; stop on <code>refusal</code>; continue on <code>max_tokens</code> (or raise it); resend on <code>pause_turn</code> (server tools).</td></tr>
+<tr><td><strong>Budgets</strong></td><td>Cap turns, output tokens, dollars, and wall-clock time. All are hard stops in code. A model-visible <em>task budget</em> (beta <code>task_budget</code>) lets the model pace itself instead of being cut off.</td></tr>
+<tr><td><strong>Warn before cutting off</strong></td><td>A few turns before the limit, append a short instruction ("3 turns left, wrap up") so the run ends with a summary instead of mid-edit.</td></tr>
+<tr><td><strong>Retries</strong></td><td>The SDKs already retry 408/409/429/5xx and connection errors with backoff (2 retries by default). Add your own retry only around <em>tools</em>, and only for idempotent ones.</td></tr>
+<tr><td><strong>Loop detection</strong></td><td>Notice the same tool called with the same arguments repeatedly, and intervene (a message, or a stop).</td></tr>
+<tr><td><strong>Streaming &amp; long turns</strong></td><td>Stream large outputs to avoid HTTP timeouts. Show progress, and let users interrupt.</td></tr>
+</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="context" data-nav="4. Context & caching" data-keywords="prompt caching cache_control prefix append-only preserved thinking compaction system message mid-session">4. Context assembly, caching and append-only transcripts</h2>
+<p>Every request re-sends the whole conversation, and the API processes it as one long prefix: <code>tools</code> → <code>system</code> → <code>messages</code>. <strong>Prompt caching</strong> makes the unchanged part of that prefix cheap and fast. That leads to the most important context rule in harness engineering: <em>keep the past byte-for-byte stable and only append</em>.</p>
+
+<figure class="diagram">
+<svg class="anim" data-still="2.5" viewBox="0 0 760 215" role="img" aria-label="Animated: a request is laid out as tools, system prompt, CLAUDE.md, then conversation turns; the cached prefix covers everything already sent; appending a new turn extends the cached prefix; editing the system prompt mid-session breaks the cache from that point on.">
+  <line x1="20" y1="58" x2="580" y2="58" style="stroke:var(--ok);stroke-width:5">
+    <animate attributeName="x2" values="580;580;660;660;130;130;580" keyTimes="0;0.35;0.42;0.6;0.66;0.97;1" dur="10s" repeatCount="indefinite"/>
+  </line>
+  <text x="20" y="45" class="lbl-ok">cached prefix (cheap, fast)</text>
+  <rect class="box-info" x="20" y="70" width="110" height="46" rx="6"/><text x="75" y="98" text-anchor="middle" font-size="12">tools</text>
+  <rect class="box-info" x="130" y="70" width="110" height="46" rx="6"/><text x="185" y="98" text-anchor="middle" font-size="12">system prompt</text>
+  <rect class="box-bad" x="130" y="70" width="110" height="46" rx="6" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.6;0.62;0.97;1" dur="10s" repeatCount="indefinite"/></rect>
+  <text x="185" y="98" text-anchor="middle" class="lbl-bad" opacity="0">edited!<animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.6;0.62;0.97;1" dur="10s" repeatCount="indefinite"/></text>
+  <rect class="box-info" x="240" y="70" width="100" height="46" rx="6"/><text x="290" y="98" text-anchor="middle" font-size="12">CLAUDE.md</text>
+  <rect class="box" x="340" y="70" width="80" height="46" rx="6"/><text x="380" y="98" text-anchor="middle" font-size="12">turn 1</text>
+  <rect class="box" x="420" y="70" width="80" height="46" rx="6"/><text x="460" y="98" text-anchor="middle" font-size="12">turn 2</text>
+  <rect class="box" x="500" y="70" width="80" height="46" rx="6"/><text x="540" y="98" text-anchor="middle" font-size="12">turn 3</text>
+  <g opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.1;0.14;0.97;1" dur="10s" repeatCount="indefinite"/>
+    <rect class="box-accent" x="580" y="70" width="80" height="46" rx="6"/><text x="620" y="98" text-anchor="middle" font-size="12">new turn</text>
+  </g>
+  <text x="180" y="136" text-anchor="middle" class="lbl">stable: set once per session</text>
+  <text x="500" y="136" text-anchor="middle" class="lbl">grows every turn, append-only</text>
+  <text x="380" y="180" text-anchor="middle" class="lbl-ok" opacity="0">① Each request re-sends everything; the unchanged prefix is read from cache.<animate attributeName="opacity" values="1;1;0;0;0" keyTimes="0;0.36;0.38;0.99;1" dur="10s" repeatCount="indefinite"/></text>
+  <text x="380" y="180" text-anchor="middle" class="lbl-ok" opacity="0">② Append-only: on the next request the cached prefix grows to include the new turn.<animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.39;0.41;0.6;0.62;1" dur="10s" repeatCount="indefinite"/></text>
+  <text x="380" y="180" text-anchor="middle" class="lbl-bad" opacity="0">③ Editing the system prompt mid-session breaks the prefix: everything after it is uncached.<animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.62;0.64;0.97;1" dur="10s" repeatCount="indefinite"/></text>
+</svg>
+<figcaption>The green bar is the cache hit. Appending keeps it long; editing anything earlier cuts it at the edit.</figcaption>
+</figure>
+
+<h3>Rules for the context builder</h3>
+<ol class="steps">
+  <li><div><b>Freeze the prefix</b><span>Tools in a deterministic order, a system prompt with no timestamps or request IDs, and memory files loaded once per session.</span></div></li>
+  <li><div><b>Append, never rewrite</b><span>Don't edit or delete earlier messages. Beyond caching, newer models bind their thinking blocks to the exact conversation that produced them. Editing history invalidates them (and new API accounts get a 400 for it).</span></div></li>
+  <li><div><b>Mid-session instructions as messages</b><span>To change instructions, append a <code>{"role": "system", …}</code> message instead of editing the top-level system prompt. It preserves the cache and carries operator authority.</span></div></li>
+  <li><div><b>Shrink with server-side tools</b><span>Use API compaction (<code>compact_20260112</code>) or context editing (<code>clear_tool_uses_20250919</code>) rather than hand-rewriting history. Cap tool output <em>before</em> it is appended.</span></div></li>
+  <li><div><b>Measure</b><span>Log <code>usage.cache_read_input_tokens</code>. If it stays at zero, something in your prefix changes every request.</span></div></li>
+</ol>
+<pre><code>{{code:harness/caching_layout.py}}</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="permissions" data-nav="5. Permissions, hooks & sandboxing" data-keywords="permissions allow ask deny hooks PreToolUse PostToolUse Stop exit code 2 sandbox defense in depth settings.json">5. Permissions, hooks and sandboxing</h2>
+<p>Safety in a harness is <strong>layered</strong>, so no single mistake is catastrophic.</p>
+<div class="grid">
+  <div class="card"><h4>1 · Prompt</h4><p>Tells the model the rules. Soft: it guides most behaviour, but it can be forgotten or overridden by injected text.</p></div>
+  <div class="card"><h4>2 · Permissions</h4><p>Allow / ask / deny per tool or command pattern, checked by code before execution.</p></div>
+  <div class="card"><h4>3 · Hooks</h4><p>Your scripts run at lifecycle events and can block, modify, or add context. Deterministic.</p></div>
+  <div class="card"><h4>4 · Sandbox</h4><p>Even if everything above fails, the process can't reach what it isn't given: files, network, credentials.</p></div>
+</div>
+
+<h3>Claude Code: permissions and hooks in <code>.claude/settings.json</code></h3>
+<pre><code>{{code:harness/settings.json}}</code></pre>
+<div class="table-wrap"><table>
+<thead><tr><th>Hook event</th><th>Fires</th><th>Typical use</th></tr></thead>
+<tbody>
+<tr><td><code>PreToolUse</code></td><td>Before a tool runs</td><td>Block dangerous commands; validate arguments; enforce branch policies</td></tr>
+<tr><td><code>PostToolUse</code></td><td>After a tool succeeds</td><td>Auto-format edited files; run linters; log</td></tr>
+<tr><td><code>UserPromptSubmit</code></td><td>When the user sends a prompt</td><td>Add context; block prompts containing secrets</td></tr>
+<tr><td><code>Stop</code> / <code>SubagentStop</code></td><td>When the agent wants to finish</td><td>Refuse to stop until tests pass</td></tr>
+<tr><td><code>SessionStart</code> / <code>PreCompact</code></td><td>Session start; before compaction</td><td>Load project state; save notes before history is summarised</td></tr>
+</tbody></table></div>
+<p>A command hook receives the event as JSON on stdin. <strong>Exit 0</strong> lets it proceed. <strong>Exit 2 blocks it</strong>, and stderr is fed back to Claude so it can adapt:</p>
+<pre><code>{{code:harness/hooks/block_dangerous.py}}</code></pre>
+<div class="callout exam"><span class="title">🎯 Exam lens: prompt vs hook</span>"Claude must <em>always</em> run the formatter after editing" → a <code>PostToolUse</code> hook, not a <code>CLAUDE.md</code> line. "Never touch <code>.env</code>" → a <code>deny</code> permission rule plus a sandbox, not just an instruction. Instructions are for judgment; hooks and permissions are for guarantees.</div>
+
+<!-- ============================================================ -->
+<h2 id="verify" data-nav="6. Verification loops" data-keywords="verification tests feedback loop stop hook definition of done self check judge">6. Verification: don't accept "done" without proof</h2>
+<p>The highest-leverage thing a harness can do is <strong>give the agent a way to check its own work</strong>, and refuse to finish until the check passes. Models are good at fixing a failure they can <em>see</em>.</p>
+<figure class="diagram">
+<svg class="anim" data-still="8.3" viewBox="0 0 760 225" role="img" aria-label="Animated: the agent acts, the verifier runs tests, failures go to a feedback box and back to the agent; after two rounds the tests pass and the work is done.">
+  <defs><marker id="he3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker></defs>
+  <path class="line" d="M200,70 L298,70" marker-end="url(#he3)"/>
+  <path class="line-ok" d="M460,70 L578,70" marker-end="url(#he3)"/><text x="519" y="62" text-anchor="middle" class="lbl-ok">pass</text>
+  <path class="line-bad" d="M380,100 L380,148" marker-end="url(#he3)"/><text x="390" y="128" class="lbl-bad">fail</text>
+  <path class="line" d="M300,180 L120,180 L120,102" marker-end="url(#he3)"/><text x="210" y="172" text-anchor="middle" class="lbl">errors → next prompt</text>
+  <circle r="7" class="coin"><animateMotion dur="9s" repeatCount="indefinite" path="M120,70 L380,70 L380,180 L120,180 L120,70 L380,70 L380,180 L120,180 L120,70 L380,70 L660,70"/></circle>
+  <rect class="box-accent" x="40" y="40" width="160" height="60" rx="10"/><text x="120" y="66" text-anchor="middle" font-size="14" font-weight="700">Agent acts</text><text x="120" y="86" text-anchor="middle" class="lbl">edits code</text>
+  <rect class="box" x="300" y="40" width="160" height="60" rx="10"/><text x="380" y="66" text-anchor="middle" font-size="14" font-weight="700">Verify</text><text x="380" y="86" text-anchor="middle" class="lbl">tests · lint · types</text>
+  <circle cx="445" cy="52" r="6" class="light-red"><animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.86;0.87;0.98;1" dur="9s" repeatCount="indefinite"/></circle>
+  <circle cx="445" cy="52" r="6" class="light-green" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.86;0.87;0.98;1" dur="9s" repeatCount="indefinite"/></circle>
+  <rect class="box-ok" x="580" y="40" width="160" height="60" rx="10"/><text x="660" y="66" text-anchor="middle" font-size="14" font-weight="700">Done</text><text x="660" y="86" text-anchor="middle" class="lbl">verified result</text>
+  <rect class="box-bad" x="300" y="150" width="160" height="60" rx="10"/><text x="380" y="176" text-anchor="middle" font-size="14" font-weight="700">Feedback</text><text x="380" y="196" text-anchor="middle" class="lbl">failing test output</text>
+</svg>
+<figcaption>Two failed checks feed their error output back to the agent; on the third attempt the light turns green and only then does the run finish.</figcaption>
+</figure>
+<div class="table-wrap"><table>
+<thead><tr><th>Verifier</th><th>Strength</th><th>Watch out for</th></tr></thead>
+<tbody>
+<tr><td><strong>Rules / code</strong> (tests, linters, type-checkers, schema validation)</td><td>Fast, cheap, objective</td><td>Only as good as the tests; agents may "fix" tests instead of code, so protect test files</td></tr>
+<tr><td><strong>Visual</strong> (screenshots of UI)</td><td>Catches layout and rendering bugs</td><td>Needs a browser tool and a clear spec</td></tr>
+<tr><td><strong>LLM as judge</strong> (a separate reviewer with a rubric)</td><td>Handles fuzzy quality (tone, completeness)</td><td>Costs tokens; calibrate against human grades</td></tr>
+<tr><td><strong>Human review</strong></td><td>The final authority for high-stakes changes</td><td>Slow; save it for what matters</td></tr>
+</tbody></table></div>
+<p>In Claude Code, a <code>Stop</code> hook turns this into policy. Exit 2 blocks the stop and hands the failure output back to Claude:</p>
+<pre><code>{{code:harness/hooks/stop_until_tests_pass.py}}</code></pre>
+<div class="callout trap"><span class="title">⚠️ Trap</span>A <code>Stop</code> hook that always blocks creates an endless loop. Check <code>stop_hook_active</code> (as above), or count attempts and give up after N.</div>
+
+<!-- ============================================================ -->
+<h2 id="mini" data-nav="7. Build a mini harness" data-keywords="mini harness python implementation policy budget hooks trace compaction tested">7. Build it: a complete mini harness (tested)</h2>
+<p>Everything above in one file, on the raw Messages API. It's small enough to read in ten minutes, and it is covered by offline tests with a scripted fake client: the deny pattern, the pre-hook block, a human "no", secret redaction, a failed-then-passed verification, the budget warning, and the trace are all exercised.</p>
+<pre><code>{{code:harness/mini_harness.py}}</code></pre>
+<div class="table-wrap"><table>
+<thead><tr><th>Harness feature</th><th>Where in the code</th></tr></thead>
+<tbody>
+<tr><td>Bounded loop &amp; budgets</td><td><code>Budget</code>, <code>while not self.budget.exhausted()</code></td></tr>
+<tr><td>Warn before the end</td><td>appended <code>role: "system"</code> message at 3 turns left</td></tr>
+<tr><td>Permissions (allow / ask / deny)</td><td><code>Policy.decide</code> per risk level + deny patterns</td></tr>
+<tr><td>Deterministic guardrails</td><td><code>pre_hooks</code> (e.g. <code>protect_main_branch</code>)</td></tr>
+<tr><td>Output hygiene</td><td><code>post_hooks</code> (redaction) + <code>max_result_chars</code> cap</td></tr>
+<tr><td>Errors as information</td><td>every failure becomes <code>is_error: true</code>, never an exception</td></tr>
+<tr><td>Caching &amp; compaction</td><td><code>cache_control</code> on the system block; server-side <code>compact_20260112</code></td></tr>
+<tr><td>Append-only transcript</td><td>only <code>messages.append(...)</code>, never edits</td></tr>
+<tr><td>Verification before done</td><td><code>verify()</code> on <code>end_turn</code>; failures re-enter as feedback</td></tr>
+<tr><td>Observability</td><td><code>trace()</code> → <code>trace.jsonl</code></td></tr>
+</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="sdk" data-nav="8. Harness via the Agent SDK" data-keywords="claude agent sdk hooks can_use_tool allowed_tools permission_mode HookMatcher">8. Or rent the harness: the Claude Agent SDK</h2>
+<p>The Agent SDK gives you Claude Code's harness (built-in tools, loop, compaction, subagents, sessions) and lets you plug in your own policy as Python callbacks:</p>
+<pre><code>{{code:harness/sdk_harness.py}}</code></pre>
+<div class="callout warn"><span class="title">⚠️ A subtle ordering rule</span>Tools listed in <code>allowed_tools</code> are <strong>pre-approved</strong>: they never reach your <code>can_use_tool</code> callback. Put a tool there only if you never want to inspect its calls. Hooks still run for pre-approved tools, which is why the dangerous-command check above is a <code>PreToolUse</code> hook.</div>
+<div class="table-wrap"><table>
+<thead><tr><th>Permission mode</th><th>Behaviour</th></tr></thead>
+<tbody>
+<tr><td><code>default</code></td><td>Ask for anything not allowed by rules</td></tr>
+<tr><td><code>acceptEdits</code></td><td>Auto-approve file edits; still ask for other risky tools</td></tr>
+<tr><td><code>plan</code></td><td>Read-only exploration and planning; no changes</td></tr>
+<tr><td><code>dontAsk</code></td><td>Never prompt: anything not pre-approved is denied</td></tr>
+<tr><td><code>auto</code></td><td>A classifier approves low-risk calls and escalates the rest</td></tr>
+<tr><td><code>bypassPermissions</code></td><td>No checks at all. Only inside a disposable sandbox</td></tr>
+</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="long" data-nav="9. Long-running agents" data-keywords="long running progress file feature list initializer git checkpoints multi session">9. Long-running agents: work that spans many context windows</h2>
+<p>Some jobs (building an app, a large migration) can't finish in one context window. Each new session starts with no memory, so the harness must make the <em>environment</em> carry the state:</p>
+<ol class="steps">
+  <li><div><b>Initializer session</b><span>Sets up the project, writes a structured feature list (all items "failing"), an <code>init.sh</code> to start the app, and a progress file, then makes the first git commit.</span></div></li>
+  <li><div><b>Each working session starts by orienting</b><span>Read the progress file and git log, run <code>init.sh</code>, and run a smoke test to confirm nothing is broken before starting.</span></div></li>
+  <li><div><b>One feature at a time</b><span>Pick the highest-priority failing item, implement it, and verify it end to end.</span></div></li>
+  <li><div><b>Leave a clean state</b><span>Mark the item passing only after verification, commit with a descriptive message, and update the progress notes for the next session.</span></div></li>
+</ol>
+<pre><code><span class="c"># features.json (the agent may only flip "passes"; never delete or edit tests)</span>
+[{"id": "auth-01", "description": "User can sign up with email", "passes": true},
+ {"id": "auth-02", "description": "Password reset email is sent", "passes": false}]
+
+<span class="c"># progress.md (written at the end of every session)</span>
+## Session 14
+- Done: auth-01 (signup), verified in browser; commit 3f2a91c
+- Next: auth-02. Mail sender stub exists in src/mail.ts
+- Gotcha: run `npm run db:reset` before e2e tests</code></pre>
+<div class="callout tip"><span class="title">💡 Why JSON for the feature list?</span>Structured files are harder for the model to "accidentally" rewrite than prose, and easy for the harness to check (e.g. a hook that rejects edits removing items).</div>
+
+<!-- ============================================================ -->
+<h2 id="observe" data-nav="10. Observability" data-keywords="tracing logging metrics opentelemetry tokens cost cache hit rate">10. Observability: you can't fix what you can't see</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Signal</th><th>Why it matters</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>Full transcript / trace per run</td><td>Debugging starts by <em>reading</em> what the agent saw and did</td><td>JSONL events, SDK message stream, Claude Code transcripts</td></tr>
+<tr><td>Tokens in/out, cache read/write</td><td>Cost and cache health</td><td><code>response.usage</code></td></tr>
+<tr><td>Cost per <em>completed task</em></td><td>The real unit economics (a cheap call that needs 5 retries isn't cheap)</td><td>Sum per run ÷ successes</td></tr>
+<tr><td>Turns per task, tool error rate</td><td>Spot confusing tools and loops</td><td>Trace events</td></tr>
+<tr><td>Permission denials, hook blocks</td><td>Policy too tight, or agent misbehaving</td><td>Harness logs; <code>ResultMessage.permission_denials</code> in the SDK</td></tr>
+</tbody></table></div>
+<p>Claude Code can export usage metrics via OpenTelemetry, so teams can track usage and cost in their existing dashboards.</p>
+
+<!-- ============================================================ -->
+<h2 id="evals" data-nav="11. Evaluating harnesses" data-keywords="evals pass@k pass^k graders regression ablation transcripts">11. Evaluating a harness</h2>
+<p>Every harness change (new tool description, different compaction threshold, new hook) can help one task and hurt another. Treat the harness like any other software: a fixed task set, automatic graders, and a number you track.</p>
+<ol class="steps">
+  <li><div><b>Collect tasks</b><span>Real requests with a checkable outcome (tests that must pass, expected fields, a rubric). Start with 20–50; grow from production failures.</span></div></li>
+  <li><div><b>Grade automatically</b><span>Code checks first; LLM judges with a rubric for fuzzy quality; humans to calibrate the judges.</span></div></li>
+  <li><div><b>Run each task several times</b><span>Agents are stochastic. One run tells you little.</span></div></li>
+  <li><div><b>Change one thing at a time</b><span>An ablation shows which harness component actually moved the score.</span></div></li>
+  <li><div><b>Read transcripts of failures</b><span>The fix is usually visible: a misleading tool description, a missing error message, a context flood.</span></div></li>
+</ol>
+<pre><code>{{code:harness/evals.py}}</code></pre>
+<div class="callout exam"><span class="title">🎯 pass@k vs pass^k</span><strong>pass@k</strong>: at least one of k tries succeeds. That's fine when a human picks the best attempt. <strong>pass^k</strong>: <em>all</em> k tries succeed. That's what matters for an unattended agent that runs every day. A harness with 60% per-try success has pass@3 ≈ 94% but pass^3 ≈ 22%.</div>
+
+<!-- ============================================================ -->
+<h2 id="antipatterns" data-nav="12. Anti-patterns" data-keywords="anti patterns mistakes checklist">12. Anti-patterns checklist</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Anti-pattern</th><th>Do instead</th></tr></thead>
+<tbody>
+<tr><td>Safety rules only in the prompt</td><td>Permissions + hooks + sandbox; the prompt explains why</td></tr>
+<tr><td>Timestamps or per-request data in the system prompt</td><td>Frozen prefix; volatile data in the latest message</td></tr>
+<tr><td>Editing or deleting earlier messages</td><td>Append-only; server-side compaction and context editing; <code>role: "system"</code> messages for new instructions</td></tr>
+<tr><td>Raising exceptions on tool failure</td><td><code>is_error</code> results with actionable text</td></tr>
+<tr><td>Unbounded loops</td><td>Turn, token, dollar, and time budgets, plus a warning before the cut-off</td></tr>
+<tr><td>Accepting "done" at face value</td><td>Verification on <code>end_turn</code>; <code>Stop</code> hooks</td></tr>
+<tr><td>Dumping whole files or results into context</td><td>Caps, pagination, just-in-time reads, subagents</td></tr>
+<tr><td>Judging changes from one lucky run</td><td>Repeated trials; pass^k; ablations</td></tr>
+<tr><td><code>bypassPermissions</code> on a laptop with real credentials</td><td>Only in disposable, network-restricted sandboxes</td></tr>
+</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="quiz" data-nav="Self-check quiz">Self-check quiz</h2>
+<p class="quiz-score">Score: 0 / 0 answered</p>
+
+<div class="quiz" data-answer="b">
+  <div class="q">1 · Your team requires that every edited file is auto-formatted. What's the most reliable implementation in Claude Code?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. A line in CLAUDE.md: "Always run prettier after editing"</button>
+    <button class="opt" data-k="b">B. A <code>PostToolUse</code> hook matching <code>Edit|Write</code> that runs the formatter</button>
+    <button class="opt" data-k="c">C. A slash command developers remember to run</button>
+    <button class="opt" data-k="d">D. A larger model</button>
+  </div>
+  <div class="why"><b>B.</b> Hooks are deterministic and run every time. Instructions are followed most of the time, which isn't a guarantee.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+  <div class="q">2 · Cache reads stay at zero across requests in a long session. Most likely cause?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. The conversation is too short to ever cache</button>
+    <button class="opt" data-k="b">B. The model doesn't support caching</button>
+    <button class="opt" data-k="c">C. Something early in the prefix changes every request (e.g. a timestamp in the system prompt, or tools in random order)</button>
+    <button class="opt" data-k="d">D. <code>max_tokens</code> is too low</button>
+  </div>
+  <div class="why"><b>C.</b> Caching is a prefix match. Any byte change invalidates everything after it, so a changing system prompt or tool order silently kills the cache.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+  <div class="q">3 · Mid-session, you need to tell the agent "the deploy freeze is now active." What's the best harness technique?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Append a <code>role: "system"</code> message with the new instruction</button>
+    <button class="opt" data-k="b">B. Rewrite the top-level system prompt and resend</button>
+    <button class="opt" data-k="c">C. Delete the earlier turns that mention deploys</button>
+    <button class="opt" data-k="d">D. Start a new session and lose the context</button>
+  </div>
+  <div class="why"><b>A.</b> Appending keeps the cached prefix (and thinking blocks) valid and carries operator authority. Editing or deleting history breaks both.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+  <div class="q">4 · A <code>Stop</code> hook runs tests and exits 2 on failure. Users report the agent sometimes never stops. Fix?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Remove the hook</button>
+    <button class="opt" data-k="b">B. Exit 1 instead of 2</button>
+    <button class="opt" data-k="c">C. Run the tests twice</button>
+    <button class="opt" data-k="d">D. Respect <code>stop_hook_active</code> (or cap attempts) so the hook doesn't block forever</button>
+  </div>
+  <div class="why"><b>D.</b> The hook should block once and then let the agent stop (reporting the failure) rather than loop indefinitely.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+  <div class="q">5 · In the Agent SDK you added <code>"Write"</code> to <code>allowed_tools</code> <em>and</em> wrote a <code>can_use_tool</code> callback to block writes outside the repo. Writes outside the repo still happen. Why?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. <code>can_use_tool</code> only works for MCP tools</button>
+    <button class="opt" data-k="b">B. Tools in <code>allowed_tools</code> are pre-approved and never reach <code>can_use_tool</code></button>
+    <button class="opt" data-k="c">C. The callback must be synchronous</button>
+    <button class="opt" data-k="d">D. Writes can't be controlled in the SDK</button>
+  </div>
+  <div class="why"><b>B.</b> Remove <code>Write</code> from <code>allowed_tools</code> (or enforce the rule in a <code>PreToolUse</code> hook, which runs regardless).</div>
+</div>
+
+<div class="quiz" data-answer="c">
+  <div class="q">6 · An agent passes a task 60% of the time per run. For an unattended nightly job, which metric best reflects the risk?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. pass@3 (≈94%)</button>
+    <button class="opt" data-k="b">B. Average output tokens</button>
+    <button class="opt" data-k="c">C. pass^k: the chance that <em>every</em> run succeeds (≈22% for k=3)</button>
+    <button class="opt" data-k="d">D. Cache hit rate</button>
+  </div>
+  <div class="why"><b>C.</b> Consistency matters when no human picks the best attempt. pass^k measures reliability; pass@k measures "can it ever do it".</div>
+</div>
+
+<div class="quiz" data-answer="a">
+  <div class="q">7 · A multi-day build agent keeps redoing finished work in each new session. Best harness fix?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Persist state in the environment: a feature list, a progress file, and git commits that each session reads first</button>
+    <button class="opt" data-k="b">B. Raise <code>max_tokens</code></button>
+    <button class="opt" data-k="c">C. Tell it to "remember better" in the system prompt</button>
+    <button class="opt" data-k="d">D. Use <code>bypassPermissions</code> so it moves faster</button>
+  </div>
+  <div class="why"><b>A.</b> New sessions start with no memory, so the harness must make the environment carry the state.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+  <div class="q">8 · Which change belongs in the harness rather than the model prompt?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Explaining the company's coding style</button>
+    <button class="opt" data-k="b">B. Describing what a good summary looks like</button>
+    <button class="opt" data-k="c">C. Asking the model to think step by step</button>
+    <button class="opt" data-k="d">D. Capping tool output at 10,000 characters and redacting API keys before results are appended</button>
+  </div>
+  <div class="why"><b>D.</b> Output caps and redaction must happen every time, before the model sees the data, so they're code. The others are guidance.</div>
+</div>
+
+<nav class="pager">
+  <a href="tools-mcp.html">← Tool Design &amp; MCP</a>
+  <a href="programmable-money.html">Programmable Money →</a>
+</nav>
+<footer class="site">CCA Study Hub · personal study notes · not an official Anthropic resource</footer>
+
+</article>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

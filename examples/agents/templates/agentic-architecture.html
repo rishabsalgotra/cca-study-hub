@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agentic Architecture</title>
+<meta name="description" content="Agentic architecture from first principles to production: the agent loop, workflows vs agents, the five workflow patterns, multi-agent orchestration, context engineering, memory, planning, and reliability, with animated diagrams and tested code.">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-root=".." data-topic="agentic-architecture">
+<main>
+<article class="content">
+
+<div class="eyebrow">Topic 3 · Domain D1</div>
+<h1>Agentic architecture: from one LLM call to multi-agent systems</h1>
+<p class="lede">An agent is a model that uses tools in a loop to reach a goal, choosing its own next step. This page builds the idea up from a single API call: the agent loop, when <em>not</em> to build an agent, the five workflow patterns, multi-agent orchestration, context engineering, memory, and how to make agents reliable. Each idea comes with an animated diagram or tested code.</p>
+<div class="meta-row">
+  <span class="pill"><b>D1</b> 27% of the exam</span>
+  <span class="pill"><b>3</b> animated diagrams</span>
+  <span class="pill"><b>4</b> runnable code files</span>
+  <span class="pill">≈ 75 min read</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="what" data-nav="1. What is an agent?" data-keywords="definition autonomy spectrum workflow agent llm tools loop environment">1. What is an agent?</h2>
+<p>A plain LLM call is a function: text in, text out. It can't look anything up, change anything, or check its own work. An <strong>agent</strong> wraps the model in a loop and gives it <strong>tools</strong>. It reads the situation, chooses an action, sees what happened, and repeats until the goal is met.</p>
+
+<div class="callout"><span class="title">Working definition</span><strong>Agent = model + tools + a loop + an environment</strong>, where <em>the model decides the next step</em>. If your code decides every step, you've built a <em>workflow</em> instead. That's often the better choice.</div>
+
+<div class="grid">
+  <div class="card"><h4>🧠 Model (brain)</h4><p>Reasons about the goal, picks the next action, and judges when it's done. Claude emits <code>tool_use</code> blocks; it never executes anything itself.</p></div>
+  <div class="card"><h4>🛠️ Tools (hands)</h4><p>Functions the model may call: search, read a file, run tests, send an email. Their names, descriptions, and schemas are the model's whole picture of what it can do.</p></div>
+  <div class="card"><h4>🔁 Loop &amp; harness (body)</h4><p>Your code: calls the model, runs the tools it asks for, feeds results back, enforces limits and permissions. See <a href="harness-engineering.html">Harness Engineering</a>.</p></div>
+  <div class="card"><h4>🗂️ Context &amp; memory</h4><p>Everything the model can see on this turn (instructions, history, tool results), plus anything saved outside the window (files, memory stores).</p></div>
+</div>
+
+<h3>The autonomy spectrum</h3>
+<figure class="diagram">
+<svg viewBox="0 0 760 175" role="img" aria-label="Spectrum from single LLM call to workflow to agent to multi-agent; left is more predictable and cheaper, right is more flexible and costlier.">
+  <defs><marker id="aa0" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker></defs>
+  <rect class="box" x="20" y="30" width="165" height="76" rx="10"/>
+  <text x="102" y="60" text-anchor="middle" font-size="14" font-weight="700">Single LLM call</text>
+  <text x="102" y="84" text-anchor="middle" class="lbl">one prompt → one answer</text>
+  <rect class="box" x="205" y="30" width="165" height="76" rx="10"/>
+  <text x="287" y="60" text-anchor="middle" font-size="14" font-weight="700">Workflow</text>
+  <text x="287" y="84" text-anchor="middle" class="lbl">your code picks the steps</text>
+  <rect class="box-accent" x="390" y="30" width="165" height="76" rx="10"/>
+  <text x="472" y="60" text-anchor="middle" font-size="14" font-weight="700">Agent</text>
+  <text x="472" y="84" text-anchor="middle" class="lbl">the model picks the steps</text>
+  <rect class="box-accent" x="575" y="30" width="165" height="76" rx="10"/>
+  <text x="657" y="60" text-anchor="middle" font-size="14" font-weight="700">Multi-agent</text>
+  <text x="657" y="84" text-anchor="middle" class="lbl">agents delegate to agents</text>
+  <path class="line-accent" d="M30,135 L730,135" marker-start="url(#aa0)" marker-end="url(#aa0)"/>
+  <text x="30" y="160" class="lbl">more predictable · cheaper · easier to test</text>
+  <text x="730" y="160" text-anchor="end" class="lbl">more flexible · costlier · harder to test</text>
+</svg>
+<figcaption>Move right only when the task needs it. Each step to the right buys flexibility and costs predictability, latency, and tokens.</figcaption>
+</figure>
+
+<!-- ============================================================ -->
+<h2 id="loop" data-nav="2. The agent loop" data-keywords="loop stop_reason tool_use end_turn tool_result runner">2. The agent loop</h2>
+<p>Every agent, from a 30-line script to Claude Code, runs the same loop. The model sees the context, either answers or asks for a tool, your code runs the tool, the result is appended, and the model looks again.</p>
+
+<figure class="diagram">
+<svg class="anim" data-still="1.2" viewBox="0 0 760 310" role="img" aria-label="Animated agent loop: context goes to the model, the model emits a tool call, the harness executes it, the observation is appended to the context, and the cycle repeats until the model ends its turn with a final answer.">
+  <defs><marker id="aa1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker></defs>
+  <path class="line" d="M130,125 L130,60 L288,60" marker-end="url(#aa1)"/>
+  <path class="line" d="M470,60 L630,60 L630,123" marker-end="url(#aa1)"/>
+  <path class="line" d="M630,195 L630,260 L472,260" marker-end="url(#aa1)"/>
+  <path class="line" d="M290,260 L130,260 L130,197" marker-end="url(#aa1)"/>
+  <path class="line dash" d="M380,95 L380,133" marker-end="url(#aa1)"/>
+  <circle r="7" class="light-green">
+    <animateMotion dur="6s" repeatCount="indefinite" path="M130,160 L130,60 L380,60 L630,60 L630,160 L630,260 L380,260 L130,260 L130,160"/>
+  </circle>
+  <rect class="box" x="40" y="125" width="180" height="70" rx="10"/>
+  <text x="130" y="155" text-anchor="middle" font-size="14" font-weight="700">Context window</text>
+  <text x="130" y="176" text-anchor="middle" class="lbl">prompt + history + results</text>
+  <rect class="box-accent" x="290" y="25" width="180" height="70" rx="10"/>
+  <text x="380" y="55" text-anchor="middle" font-size="14" font-weight="700">Model</text>
+  <text x="380" y="76" text-anchor="middle" class="lbl">decides the next step</text>
+  <rect class="box" x="540" y="125" width="180" height="70" rx="10"/>
+  <text x="630" y="155" text-anchor="middle" font-size="14" font-weight="700">Harness runs tool</text>
+  <text x="630" y="176" text-anchor="middle" class="lbl">permission check · execute</text>
+  <rect class="box" x="290" y="225" width="180" height="70" rx="10"/>
+  <text x="380" y="255" text-anchor="middle" font-size="14" font-weight="700">Observation</text>
+  <text x="380" y="276" text-anchor="middle" class="lbl">tool_result appended</text>
+  <rect class="box-ok" x="300" y="135" width="160" height="50" rx="10"/>
+  <text x="380" y="157" text-anchor="middle" font-size="13.5" font-weight="700">Final answer</text>
+  <text x="380" y="175" text-anchor="middle" class="lbl">stop_reason: end_turn</text>
+  <text x="210" y="50" text-anchor="middle" class="lbl-accent">① context in</text>
+  <text x="550" y="50" text-anchor="middle" class="lbl-accent">② tool_use</text>
+  <text x="640" y="232" class="lbl-accent">③ result</text>
+  <text x="210" y="282" text-anchor="middle" class="lbl-accent">④ append &amp; repeat</text>
+</svg>
+<figcaption>The green dot is one iteration. Each lap costs a model call. When the model has nothing more to do it ends the turn (dashed arrow) instead of asking for a tool.</figcaption>
+</figure>
+
+<h3>How your code knows what to do next: <code>stop_reason</code></h3>
+<div class="table-wrap"><table>
+<thead><tr><th><code>stop_reason</code></th><th>Meaning</th><th>Your loop should…</th></tr></thead>
+<tbody>
+<tr><td><code>tool_use</code></td><td>The model wants one or more tools run</td><td>Execute every <code>tool_use</code> block and send <em>all</em> results back in one user message</td></tr>
+<tr><td><code>end_turn</code></td><td>The model is done</td><td>Return the answer, or verify it first (tests, checks)</td></tr>
+<tr><td><code>max_tokens</code></td><td>The output hit your <code>max_tokens</code> cap</td><td>Raise the cap, or ask it to continue. Don't treat a truncated answer as done</td></tr>
+<tr><td><code>pause_turn</code></td><td>A long-running <em>server</em> tool paused the turn</td><td>Send the conversation back unchanged so it can resume</td></tr>
+<tr><td><code>refusal</code></td><td>Safety classifiers declined the request</td><td>Stop; read <code>stop_details</code>; don't retry blindly</td></tr>
+<tr><td><code>stop_sequence</code></td><td>A custom stop string was produced</td><td>Handle per your protocol</td></tr>
+</tbody></table></div>
+
+<h3>The loop, written by hand</h3>
+<p>A complete support agent with two tools. The numbered comments are the six rules every hand-written loop must follow.</p>
+<pre><code>{{code:agentic/agent_loop.py}}</code></pre>
+<div class="callout trap"><span class="title">⚠️ The classic loop bugs</span>
+<ul>
+<li><strong>Appending only the text</strong> of the assistant reply. You must append the full <code>response.content</code>, because the <code>tool_use</code> blocks (and thinking blocks) have to be there for the <code>tool_result</code> ids to match.</li>
+<li><strong>One message per tool result.</strong> When the model makes parallel calls, return all results in <em>one</em> user message. Splitting them teaches the model to stop making parallel calls.</li>
+<li><strong>Raising on tool errors.</strong> A failed tool should return <code>is_error: true</code> with a helpful message. The model can usually recover; a crashed loop can't.</li>
+<li><strong>No turn limit.</strong> Agents can loop. Always cap turns, tokens, or dollars.</li>
+</ul></div>
+
+<h3>The same agent with the SDK's tool runner</h3>
+<p>In most projects you don't hand-write the loop. The Python SDK's <code>tool_runner</code> (beta) builds each tool's schema from the function signature and docstring, then runs the call → execute → append cycle for you:</p>
+<pre><code>{{code:agentic/tool_runner.py}}</code></pre>
+<p>Write the loop by hand when you need control the runner doesn't give you. Otherwise prefer the runner. Its per-turn hooks still let you add approvals and logging.</p>
+
+<!-- ============================================================ -->
+<h2 id="when" data-nav="3. Workflows vs agents" data-keywords="when to use agent workflow decision simplest">3. Workflows vs agents: choose the simplest thing that works</h2>
+<p>The most common architecture mistake is building an agent when a workflow would do. A <strong>workflow</strong> runs LLM calls along paths <em>your code</em> defines. An <strong>agent</strong> lets the model choose the path. Workflows are cheaper, faster, and much easier to test. Agents are for problems whose steps you can't predict in advance.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Ask</th><th>If "no"…</th></tr></thead>
+<tbody>
+<tr><td><strong>Complexity:</strong> Is the task multi-step and hard to fully specify in advance?</td><td>Use a single call or a fixed workflow</td></tr>
+<tr><td><strong>Value:</strong> Does the outcome justify extra cost and latency (agents use many more tokens)?</td><td>Use a workflow with a cheaper model</td></tr>
+<tr><td><strong>Viability:</strong> Is the model actually good at this kind of task?</td><td>Narrow the task or keep a human in the loop</td></tr>
+<tr><td><strong>Cost of error:</strong> Can mistakes be caught and undone (tests, review, rollback)?</td><td>Add approval gates, or don't automate it</td></tr>
+</tbody></table></div>
+<div class="callout exam"><span class="title">🎯 Exam lens</span>When a scenario has <em>known, fixed steps</em> (extract → validate → format), the right answer is almost always a workflow or prompt chain, not an autonomous agent. Pick an agent when the path depends on what is discovered along the way (debugging, research, open-ended coding).</div>
+
+<!-- ============================================================ -->
+<h2 id="patterns" data-nav="4. Five workflow patterns" data-keywords="prompt chaining routing parallelization sectioning voting orchestrator workers evaluator optimizer">4. The five workflow patterns</h2>
+<p>These building blocks cover most production LLM systems. They compose freely: a router can send work to an orchestrator, which can use evaluator loops inside its workers.</p>
+
+<div class="grid">
+<div class="card"><h4>1 · Prompt chaining</h4>
+<svg viewBox="0 0 300 70" role="img" aria-label="Three LLM calls in sequence with a gate check between the first and second." style="width:100%;height:auto">
+  <rect class="box-accent" x="5" y="20" width="70" height="30" rx="6"/><text x="40" y="40" text-anchor="middle" font-size="12">LLM 1</text>
+  <path class="line" d="M75,35 L105,35"/><rect class="box-ok" x="105" y="22" width="40" height="26" rx="13"/><text x="125" y="39" text-anchor="middle" font-size="11">gate</text>
+  <path class="line" d="M145,35 L160,35"/><rect class="box-accent" x="160" y="20" width="60" height="30" rx="6"/><text x="190" y="40" text-anchor="middle" font-size="12">LLM 2</text>
+  <path class="line" d="M220,35 L235,35"/><rect class="box-accent" x="235" y="20" width="60" height="30" rx="6"/><text x="265" y="40" text-anchor="middle" font-size="12">LLM 3</text>
+</svg>
+<p>Fixed sequence; each step's output feeds the next. Checks between steps catch problems early. <b>Use for:</b> outline → draft → edit; extract → translate.</p></div>
+<div class="card"><h4>2 · Routing</h4>
+<svg viewBox="0 0 300 80" role="img" aria-label="A classifier sends the input to one of three specialised handlers." style="width:100%;height:auto">
+  <rect class="box-accent" x="5" y="25" width="80" height="30" rx="6"/><text x="45" y="45" text-anchor="middle" font-size="12">classifier</text>
+  <path class="line" d="M85,40 L150,12"/><path class="line" d="M85,40 L150,40"/><path class="line" d="M85,40 L150,68"/>
+  <rect class="box" x="150" y="2" width="145" height="20" rx="5"/><text x="222" y="16" text-anchor="middle" font-size="11">billing prompt</text>
+  <rect class="box" x="150" y="30" width="145" height="20" rx="5"/><text x="222" y="44" text-anchor="middle" font-size="11">technical prompt</text>
+  <rect class="box" x="150" y="58" width="145" height="20" rx="5"/><text x="222" y="72" text-anchor="middle" font-size="11">general (cheap model)</text>
+</svg>
+<p>Classify first, then handle with a specialised prompt or model. <b>Use for:</b> support triage; sending easy questions to a small model.</p></div>
+<div class="card"><h4>3 · Parallelization</h4>
+<svg viewBox="0 0 300 80" role="img" aria-label="Input fans out to three LLM calls in parallel and results are aggregated." style="width:100%;height:auto">
+  <circle class="box" cx="20" cy="40" r="12"/><path class="line" d="M32,40 L95,12"/><path class="line" d="M32,40 L95,40"/><path class="line" d="M32,40 L95,68"/>
+  <rect class="box-accent" x="95" y="2" width="90" height="20" rx="5"/><text x="140" y="16" text-anchor="middle" font-size="11">security</text>
+  <rect class="box-accent" x="95" y="30" width="90" height="20" rx="5"/><text x="140" y="44" text-anchor="middle" font-size="11">performance</text>
+  <rect class="box-accent" x="95" y="58" width="90" height="20" rx="5"/><text x="140" y="72" text-anchor="middle" font-size="11">tests</text>
+  <path class="line" d="M185,12 L240,40"/><path class="line" d="M185,40 L240,40"/><path class="line" d="M185,68 L240,40"/>
+  <rect class="box-ok" x="240" y="25" width="55" height="30" rx="6"/><text x="267" y="44" text-anchor="middle" font-size="11">merge</text>
+</svg>
+<p><b>Sectioning:</b> independent sub-tasks at once. <b>Voting:</b> the same task N times, then take the majority. <b>Use for:</b> multi-aspect reviews; high-stakes classification.</p></div>
+<div class="card"><h4>4 · Orchestrator–workers</h4>
+<svg viewBox="0 0 300 80" role="img" aria-label="An orchestrator LLM creates a dynamic number of worker tasks and a synthesizer combines results." style="width:100%;height:auto">
+  <rect class="box-accent" x="5" y="25" width="85" height="30" rx="6"/><text x="47" y="45" text-anchor="middle" font-size="11">orchestrator</text>
+  <path class="line dash" d="M90,40 L130,12"/><path class="line dash" d="M90,40 L130,40"/><path class="line dash" d="M90,40 L130,68"/>
+  <rect class="box" x="130" y="2" width="70" height="20" rx="5"/><text x="165" y="16" text-anchor="middle" font-size="11">worker ?</text>
+  <rect class="box" x="130" y="30" width="70" height="20" rx="5"/><text x="165" y="44" text-anchor="middle" font-size="11">worker ?</text>
+  <rect class="box" x="130" y="58" width="70" height="20" rx="5"/><text x="165" y="72" text-anchor="middle" font-size="11">worker ?</text>
+  <path class="line" d="M200,12 L225,40"/><path class="line" d="M200,40 L225,40"/><path class="line" d="M200,68 L225,40"/>
+  <rect class="box-ok" x="225" y="25" width="70" height="30" rx="6"/><text x="260" y="44" text-anchor="middle" font-size="11">synthesize</text>
+</svg>
+<p>Like parallelization, but the <em>model</em> decides the sub-tasks at runtime. <b>Use for:</b> research, multi-file changes where the files aren't known in advance.</p></div>
+<div class="card"><h4>5 · Evaluator–optimizer</h4>
+<svg viewBox="0 0 300 80" role="img" aria-label="A generator LLM produces a draft, an evaluator LLM grades it and sends feedback back until it passes." style="width:100%;height:auto">
+  <rect class="box-accent" x="10" y="25" width="90" height="30" rx="6"/><text x="55" y="45" text-anchor="middle" font-size="11">generator</text>
+  <path class="line" d="M100,32 L180,32"/><text x="140" y="26" text-anchor="middle" font-size="10" class="lbl">draft</text>
+  <rect class="box-ok" x="180" y="25" width="90" height="30" rx="6"/><text x="225" y="45" text-anchor="middle" font-size="11">evaluator</text>
+  <path class="line dash" d="M180,50 L100,50"/><text x="140" y="66" text-anchor="middle" font-size="10" class="lbl">feedback</text>
+</svg>
+<p>One call generates, another grades against explicit criteria, and the loop repeats until it passes (bounded). <b>Use for:</b> translation quality, code that must meet a spec, writing with a rubric.</p></div>
+</div>
+
+<h3>All five patterns in code</h3>
+<p>One file, one function per pattern. Note where <em>your code</em> owns the control flow (gates, routes, vote counting, round limits). That's what makes these workflows and not agents.</p>
+<pre><code>{{code:agentic/workflows.py}}</code></pre>
+<div class="callout tip"><span class="title">💡 Design notes from the code</span>
+<ul>
+<li><strong>Structured outputs</strong> (<code>output_config.format</code>) make routing and grading reliable. You parse guaranteed JSON instead of hoping the model said "billing".</li>
+<li><strong>Cheap models for narrow jobs:</strong> the router, voters, and workers use <code>claude-haiku-5-5</code>; planning and synthesis use <code>claude-opus-5-5</code>.</li>
+<li><strong>Every loop is bounded</strong> (<code>max_rounds</code>), and every gate fails loudly.</li>
+</ul></div>
+
+<!-- ============================================================ -->
+<h2 id="multi-agent" data-nav="5. Multi-agent systems" data-keywords="subagents orchestrator lead agent delegation context isolation handoff parallel">5. Multi-agent systems</h2>
+<p>A multi-agent system is orchestrator–workers where the workers are themselves agents: each subagent runs its own loop with its own tools and <strong>its own context window</strong>. The lead agent plans, delegates, and combines condensed results.</p>
+
+<figure class="diagram">
+<svg class="anim" data-still="4.5" viewBox="0 0 760 320" role="img" aria-label="Animated: a lead agent sends tasks to three subagents in parallel; each subagent's own context window fills as it works; each returns a small condensed result, and the lead synthesizes the final answer.">
+  <path class="line" d="M330,80 L130,200"/>
+  <path class="line" d="M380,80 L380,200"/>
+  <path class="line" d="M430,80 L630,200"/>
+  <rect class="box-accent" x="270" y="20" width="220" height="60" rx="10"/>
+  <text x="380" y="46" text-anchor="middle" font-size="14" font-weight="700">Lead agent (orchestrator)</text>
+  <text x="380" y="66" text-anchor="middle" class="lbl">plans · delegates · synthesizes</text>
+  <text x="380" y="100" text-anchor="middle" class="lbl-ok" opacity="0">✓ synthesized answer<animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.82;0.85;0.97;1" dur="8s" repeatCount="indefinite"/></text>
+  <text x="225" y="125" text-anchor="end" class="lbl-accent">task + clear brief</text>
+  <text x="535" y="125" class="lbl-ok">condensed result only</text>
+
+  <g>
+    <rect class="box" x="40" y="200" width="180" height="90" rx="10"/>
+    <text x="130" y="224" text-anchor="middle" font-size="13.5" font-weight="700">Subagent A</text>
+    <text x="130" y="242" text-anchor="middle" class="lbl">own context window</text>
+    <rect class="box" x="55" y="256" width="150" height="14" rx="4"/>
+    <rect class="box-accent" x="55" y="256" width="0" height="14" rx="4"><animate attributeName="width" values="0;0;150;150;0" keyTimes="0;0.25;0.6;0.97;1" dur="8s" repeatCount="indefinite"/></rect>
+    <rect class="box" x="290" y="200" width="180" height="90" rx="10"/>
+    <text x="380" y="224" text-anchor="middle" font-size="13.5" font-weight="700">Subagent B</text>
+    <text x="380" y="242" text-anchor="middle" class="lbl">own context window</text>
+    <rect class="box" x="305" y="256" width="150" height="14" rx="4"/>
+    <rect class="box-accent" x="305" y="256" width="0" height="14" rx="4"><animate attributeName="width" values="0;0;110;110;0" keyTimes="0;0.25;0.55;0.97;1" dur="8s" repeatCount="indefinite"/></rect>
+    <rect class="box" x="540" y="200" width="180" height="90" rx="10"/>
+    <text x="630" y="224" text-anchor="middle" font-size="13.5" font-weight="700">Subagent C</text>
+    <text x="630" y="242" text-anchor="middle" class="lbl">own context window</text>
+    <rect class="box" x="555" y="256" width="150" height="14" rx="4"/>
+    <rect class="box-accent" x="555" y="256" width="0" height="14" rx="4"><animate attributeName="width" values="0;0;135;135;0" keyTimes="0;0.25;0.58;0.97;1" dur="8s" repeatCount="indefinite"/></rect>
+    <text x="380" y="310" text-anchor="middle" class="lbl">tool calls, file reads, and dead ends stay inside each subagent</text>
+  </g>
+
+  <circle r="7" class="coin" opacity="0"><animateMotion dur="8s" repeatCount="indefinite" calcMode="linear" path="M330,80 L130,200" keyPoints="0;0;1;1" keyTimes="0;0.05;0.22;1"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.05;0.22;0.23;1" dur="8s" repeatCount="indefinite"/></circle>
+  <circle r="7" class="coin" opacity="0"><animateMotion dur="8s" repeatCount="indefinite" calcMode="linear" path="M380,80 L380,200" keyPoints="0;0;1;1" keyTimes="0;0.05;0.22;1"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.05;0.22;0.23;1" dur="8s" repeatCount="indefinite"/></circle>
+  <circle r="7" class="coin" opacity="0"><animateMotion dur="8s" repeatCount="indefinite" calcMode="linear" path="M430,80 L630,200" keyPoints="0;0;1;1" keyTimes="0;0.05;0.22;1"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.05;0.22;0.23;1" dur="8s" repeatCount="indefinite"/></circle>
+  <circle r="4" class="light-green" opacity="0"><animateMotion dur="8s" repeatCount="indefinite" calcMode="linear" path="M130,200 L330,80" keyPoints="0;0;1;1" keyTimes="0;0.62;0.8;1"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.61;0.62;0.8;0.81;1" dur="8s" repeatCount="indefinite"/></circle>
+  <circle r="4" class="light-green" opacity="0"><animateMotion dur="8s" repeatCount="indefinite" calcMode="linear" path="M380,200 L380,80" keyPoints="0;0;1;1" keyTimes="0;0.62;0.8;1"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.61;0.62;0.8;0.81;1" dur="8s" repeatCount="indefinite"/></circle>
+  <circle r="4" class="light-green" opacity="0"><animateMotion dur="8s" repeatCount="indefinite" calcMode="linear" path="M630,200 L430,80" keyPoints="0;0;1;1" keyTimes="0;0.62;0.8;1"/><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.61;0.62;0.8;0.81;1" dur="8s" repeatCount="indefinite"/></circle>
+</svg>
+<figcaption>Big orange dots = task briefs going out. Bars = each subagent's private context filling up as it works. Small green dots = short summaries coming back. The lead's context stays clean.</figcaption>
+</figure>
+
+<h3>Why it works, and what it costs</h3>
+<div class="grid">
+  <div class="card"><h4>✅ Benefits</h4><ul>
+    <li><b>Context isolation:</b> each subagent explores in a fresh window and returns a condensed result (often around 1–2k tokens), so the lead's context stays focused.</li>
+    <li><b>Parallelism:</b> independent research threads run at the same time.</li>
+    <li><b>Specialisation:</b> different prompts, tools, and models per role (e.g. a read-only reviewer).</li>
+  </ul></div>
+  <div class="card"><h4>⚠️ Costs</h4><ul>
+    <li><b>Tokens:</b> Anthropic reported its multi-agent research system used roughly 15× the tokens of a chat. Use it only where the value justifies that.</li>
+    <li><b>Coordination:</b> subagents can duplicate work or misread vague briefs.</li>
+    <li><b>Poor fit for tightly coupled work</b> where every agent needs the same evolving state (e.g. many agents editing the same files).</li>
+  </ul></div>
+</div>
+
+<h3>Writing a good subagent brief</h3>
+<ol class="steps">
+  <li><div><b>Objective</b><span>One concrete goal: "Find the three most-cited 2025 papers on X", not "research X".</span></div></li>
+  <li><div><b>Output format</b><span>Exactly what to return and how long. The lead must be able to merge it.</span></div></li>
+  <li><div><b>Tools &amp; sources</b><span>Which tools to use and which to avoid; where to look first.</span></div></li>
+  <li><div><b>Boundaries</b><span>What is out of scope, plus effort limits ("stop after ~10 tool calls"), so subagents don't overlap or sprawl.</span></div></li>
+</ol>
+
+<h3>Subagents with the Claude Agent SDK</h3>
+<p>The Agent SDK packages Claude Code's harness as a library. Subagents are declared with <code>AgentDefinition</code> and launched by the model through the built-in <code>Agent</code> tool. In Claude Code itself, the equivalent is a Markdown file in <code>.claude/agents/</code>.</p>
+<pre><code>{{code:agentic/agent_sdk.py}}</code></pre>
+<div class="callout"><span class="title">Two communication shapes</span><strong>Hub-and-spoke</strong> (shown above): subagents only talk to the lead, which keeps control and context clean. <strong>Handoff / peer-to-peer:</strong> one agent passes the whole conversation to another, which suits phase changes (triage → specialist). Default to hub-and-spoke; it's easier to debug.</div>
+
+<!-- ============================================================ -->
+<h2 id="context" data-nav="6. Context engineering" data-keywords="context window context rot compaction just in time retrieval notes attention budget">6. Context engineering</h2>
+<p>The context window is the agent's working memory, and it's a <strong>finite attention budget</strong>. As it fills with stale tool output and old turns, quality drops ("context rot") and cost rises. Context engineering means deciding what goes into the window on every turn.</p>
+
+<figure class="diagram">
+<svg class="anim" data-still="5.2" viewBox="0 0 760 200" role="img" aria-label="Animated: the conversation history grows inside a fixed context window until it reaches a compaction threshold; the old turns are then replaced by a short summary and the history grows again.">
+  <text x="20" y="40" font-size="13.5" font-weight="700">Context window (fixed size)</text>
+  <rect class="box" x="20" y="60" width="720" height="50" rx="8"/>
+  <rect class="box-info" x="20" y="60" width="90" height="50" rx="8"/>
+  <text x="65" y="90" text-anchor="middle" font-size="12">system+tools</text>
+  <rect class="box-ok" x="110" y="60" width="60" height="50" opacity="0"><animate attributeName="opacity" values="0;0;0;1;1;0" keyTimes="0;0.6;0.7;0.75;0.98;1" dur="8s" repeatCount="indefinite"/></rect>
+  <text x="140" y="90" text-anchor="middle" font-size="11" opacity="0">summary<animate attributeName="opacity" values="0;0;0;1;1;0" keyTimes="0;0.6;0.7;0.75;0.98;1" dur="8s" repeatCount="indefinite"/></text>
+  <rect class="box-accent" x="110" y="60" width="0" height="50">
+    <animate attributeName="x" values="110;110;110;170;170" keyTimes="0;0.6;0.7;0.75;1" dur="8s" repeatCount="indefinite"/>
+    <animate attributeName="width" values="0;510;510;0;180" keyTimes="0;0.6;0.7;0.75;1" dur="8s" repeatCount="indefinite"/>
+  </rect>
+  <path class="line-bad dash" d="M620,52 L620,118"/>
+  <text x="620" y="135" text-anchor="middle" class="lbl-bad">compaction threshold</text>
+  <text x="380" y="170" text-anchor="middle" class="lbl-accent" opacity="0">each turn appends messages and tool results…<animate attributeName="opacity" values="1;1;0;0;0" keyTimes="0;0.58;0.6;0.99;1" dur="8s" repeatCount="indefinite"/></text>
+  <text x="380" y="170" text-anchor="middle" class="lbl-ok" opacity="0">…compaction replaces old turns with a short summary, and work continues<animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.62;0.64;0.97;1" dur="8s" repeatCount="indefinite"/></text>
+</svg>
+<figcaption>Orange = conversation history. Without management it reaches the limit. With compaction, the oldest turns become a summary (green) and the agent keeps going.</figcaption>
+</figure>
+
+<h3>Five techniques</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Technique</th><th>What it does</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td><strong>Just-in-time retrieval</strong></td><td>Keep lightweight <em>references</em> (paths, URLs, IDs) and load content with tools only when needed</td><td>Claude Code uses <code>glob</code>/<code>grep</code> to find files instead of pasting the whole repo</td></tr>
+<tr><td><strong>Compaction</strong></td><td>Summarise old turns when nearing the limit</td><td>API server-side compaction (<code>compact_20260112</code>); Claude Code's auto-compact</td></tr>
+<tr><td><strong>Clearing stale tool results</strong></td><td>Drop old, already-used tool outputs from the window</td><td>Context editing (<code>clear_tool_uses_20250919</code>)</td></tr>
+<tr><td><strong>Structured note-taking</strong></td><td>The agent writes progress, decisions, and to-dos to a file and re-reads it later</td><td><code>NOTES.md</code>, a progress file, the memory tool</td></tr>
+<tr><td><strong>Subagent isolation</strong></td><td>Push exploration into a subagent; only its summary comes back</td><td>The multi-agent pattern above</td></tr>
+</tbody></table></div>
+<div class="callout tip"><span class="title">💡 Rule of thumb</span>Find the <em>smallest set of high-signal tokens</em> that lets the model do the next step well. More context isn't better context.</div>
+
+<!-- ============================================================ -->
+<h2 id="memory" data-nav="7. Memory" data-keywords="memory short term long term memory tool CLAUDE.md episodic semantic procedural">7. Memory: what survives the context window</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Kind</th><th>Lives in</th><th>Lifetime</th><th>Examples</th></tr></thead>
+<tbody>
+<tr><td><strong>Working memory</strong></td><td>The context window</td><td>One session (until compacted)</td><td>Conversation, tool results, current plan</td></tr>
+<tr><td><strong>Procedural</strong> (how to work)</td><td>Instruction files loaded at start</td><td>Persistent, versioned</td><td><code>CLAUDE.md</code>, skills, system prompts</td></tr>
+<tr><td><strong>Episodic</strong> (what happened)</td><td>Files or stores the agent writes</td><td>Across sessions</td><td>Progress logs, git history, session summaries</td></tr>
+<tr><td><strong>Semantic</strong> (facts)</td><td>External stores queried by tools</td><td>Long-term</td><td>The memory tool (<code>memory_20250818</code>, a <code>/memories</code> directory you host), a database, or a vector index for RAG</td></tr>
+</tbody></table></div>
+<div class="callout trap"><span class="title">⚠️ Trap</span>The model itself is stateless. It remembers nothing between API calls. "Memory" always means the harness puts text back into the prompt, either up front (instruction files) or on demand (a tool reads it).</div>
+
+<!-- ============================================================ -->
+<h2 id="planning" data-nav="8. Planning & reasoning" data-keywords="ReAct plan and execute reflection thinking adaptive effort">8. Planning and reasoning patterns</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Pattern</th><th>How it works</th><th>Use it when</th></tr></thead>
+<tbody>
+<tr><td><strong>ReAct</strong> (reason + act)</td><td>Think → act (tool) → observe → think… This is the default agent loop</td><td>Almost always; it's the baseline</td></tr>
+<tr><td><strong>Plan-and-execute</strong></td><td>Write an explicit plan first (often a to-do list), then work through it, re-planning when reality differs</td><td>Long tasks; when a human should approve the plan (Claude Code's plan mode)</td></tr>
+<tr><td><strong>Reflection / self-critique</strong></td><td>After acting, the agent (or a separate grader) checks the result against criteria and revises</td><td>Quality-sensitive outputs (the evaluator–optimizer pattern)</td></tr>
+<tr><td><strong>Extended reasoning</strong></td><td>Adaptive thinking lets the model reason privately before and <em>between</em> tool calls; <code>output_config.effort</code> trades depth against cost</td><td>Hard decisions inside the loop; turn effort up for coding and agentic work, down for simple routing</td></tr>
+</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="reliability" data-nav="9. Reliability & failure modes" data-keywords="failure modes guardrails human in the loop idempotent verification infinite loop prompt injection">9. Reliability: how agents fail and how to stop it</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Failure mode</th><th>Symptom</th><th>Architectural fix</th></tr></thead>
+<tbody>
+<tr><td>Runaway loops</td><td>Same tool called again and again; cost spikes</td><td>Turn/token/dollar budgets; detect repeated identical calls</td></tr>
+<tr><td>Premature "done"</td><td>Agent declares success without checking</td><td>Verification step (tests, checks) before accepting <code>end_turn</code></td></tr>
+<tr><td>Goal drift</td><td>Long sessions wander from the task</td><td>Written plan or to-do list re-read each step; progress notes</td></tr>
+<tr><td>Tool misuse</td><td>Wrong tool, malformed arguments</td><td>Better tool names/descriptions, <code>strict: true</code> schemas, fewer overlapping tools</td></tr>
+<tr><td>Irreversible mistakes</td><td>Deleted data, sent emails, pushed to main</td><td>Human approval gates for destructive actions; sandboxes; dry-run modes</td></tr>
+<tr><td>Prompt injection</td><td>A web page or file tells the agent to do something else</td><td>Treat tool output as data; least-privilege tools; approvals; never give one agent private data + untrusted input + a way to send data out</td></tr>
+<tr><td>Context overflow / rot</td><td>Quality drops late in long sessions</td><td>Compaction, clearing, notes, subagents (section 6)</td></tr>
+</tbody></table></div>
+<div class="callout exam"><span class="title">🎯 Exam lens</span>Guardrails that must <em>always</em> hold (never push to main, never delete outside the workspace) belong in <strong>deterministic code</strong>: hooks, permission rules, sandboxes. They don't belong only in the prompt. Prompts guide behaviour; code enforces it.</div>
+
+<h3>Design checklist for a new agent</h3>
+<ol class="steps">
+  <li><div><b>Prove it needs to be an agent</b><span>Try a single call or a workflow first (section 3).</span></div></li>
+  <li><div><b>Define done</b><span>A checkable success condition (tests pass, schema valid, human approves).</span></div></li>
+  <li><div><b>Design a small tool set</b><span>Few, well-described, non-overlapping tools (see <a href="tools-mcp.html">Tool Design &amp; MCP</a>).</span></div></li>
+  <li><div><b>Set limits</b><span>Max turns, tokens or dollars, and wall-clock time.</span></div></li>
+  <li><div><b>Gate the dangerous actions</b><span>Permissions, approvals, sandbox.</span></div></li>
+  <li><div><b>Plan for context</b><span>Retrieval strategy, compaction, notes, subagents.</span></div></li>
+  <li><div><b>Observe and evaluate</b><span>Trace every step; run a fixed task set on every change (see <a href="harness-engineering.html">Harness Engineering</a>).</span></div></li>
+</ol>
+
+<!-- ============================================================ -->
+<h2 id="quiz" data-nav="Self-check quiz">Self-check quiz</h2>
+<p class="quiz-score">Score: 0 / 0 answered</p>
+
+<div class="quiz" data-answer="b">
+  <div class="q">1 · An invoice pipeline always does: extract fields → validate totals → format JSON. Which architecture fits best?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. An autonomous agent with extract, validate, and format tools</button>
+    <button class="opt" data-k="b">B. A prompt chain (workflow) with a programmatic check between steps</button>
+    <button class="opt" data-k="c">C. A multi-agent system with one agent per step</button>
+    <button class="opt" data-k="d">D. A single call with a very long prompt and no checks</button>
+  </div>
+  <div class="why"><b>B.</b> The steps are fixed and known in advance, so code should own the flow. A gate between steps catches errors cheaply. An agent adds cost and unpredictability for no benefit.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+  <div class="q">2 · Claude returns three <code>tool_use</code> blocks in one response. How should the loop reply?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Run the first tool only and ask the model to repeat the others</button>
+    <button class="opt" data-k="b">B. Send three separate user messages, one per tool result</button>
+    <button class="opt" data-k="c">C. Run all three (concurrently if safe) and send all three <code>tool_result</code> blocks in one user message</button>
+    <button class="opt" data-k="d">D. Send only the results that succeeded</button>
+  </div>
+  <div class="why"><b>C.</b> Every <code>tool_use</code> needs a matching <code>tool_result</code> (failures included, with <code>is_error</code>), all in a single message.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+  <div class="q">3 · What is the main reason to give a research task to subagents rather than one long-running agent?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Each subagent explores in its own context window and returns a condensed result, keeping the lead's context clean</button>
+    <button class="opt" data-k="b">B. Subagents always use fewer total tokens</button>
+    <button class="opt" data-k="c">C. Subagents share one context window, so they never duplicate work</button>
+    <button class="opt" data-k="d">D. Subagents don't need tool definitions</button>
+  </div>
+  <div class="why"><b>A.</b> Context isolation (plus parallelism) is the point. Total token use usually goes <em>up</em>, often by a lot.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+  <div class="q">4 · An agent must never run <code>git push --force</code>. Where should that rule be enforced?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Only in the system prompt, in capital letters</button>
+    <button class="opt" data-k="b">B. In the tool description</button>
+    <button class="opt" data-k="c">C. By asking the model to double-check before every command</button>
+    <button class="opt" data-k="d">D. In deterministic harness code (a pre-tool hook or permission rule) that blocks the call, with the prompt as extra guidance</button>
+  </div>
+  <div class="why"><b>D.</b> Prompts are guidance and can be ignored or injected against. Hooks and permission rules are guarantees.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+  <div class="q">5 · Late in a long session the agent's answers degrade, and the transcript is full of old file dumps. Best first fix?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Switch to a model with a bigger context window and change nothing else</button>
+    <button class="opt" data-k="b">B. Context engineering: clear stale tool results, compact, keep notes, and load files just in time</button>
+    <button class="opt" data-k="c">C. Raise <code>max_tokens</code></button>
+    <button class="opt" data-k="d">D. Restart the session and paste the full transcript back in</button>
+  </div>
+  <div class="why"><b>B.</b> This is context rot. A bigger window delays the problem but doesn't remove the noise; <code>max_tokens</code> only limits output length.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+  <div class="q">6 · Which pattern fits "translate legal text until a reviewer finds no issues, max 3 rounds"?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Routing</button>
+    <button class="opt" data-k="b">B. Parallelization (sectioning)</button>
+    <button class="opt" data-k="c">C. Evaluator–optimizer</button>
+    <button class="opt" data-k="d">D. Prompt chaining without checks</button>
+  </div>
+  <div class="why"><b>C.</b> Generate, grade against criteria, revise, with a bounded loop.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+  <div class="q">7 · Your loop receives <code>stop_reason: "max_tokens"</code>. What does it mean?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. The output was cut off at your token cap; the answer may be incomplete</button>
+    <button class="opt" data-k="b">B. The context window is full and the session is over</button>
+    <button class="opt" data-k="c">C. The model wants to call a tool</button>
+    <button class="opt" data-k="d">D. The model finished normally</button>
+  </div>
+  <div class="why"><b>A.</b> Raise <code>max_tokens</code> or ask it to continue, and never treat it as a completed answer. Tool calls give <code>tool_use</code>; normal completion gives <code>end_turn</code>.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+  <div class="q">8 · An orchestrator–workers system differs from plain parallelization because…</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. it never runs anything in parallel</button>
+    <button class="opt" data-k="b">B. it can't use cheaper models</button>
+    <button class="opt" data-k="c">C. it needs no synthesis step</button>
+    <button class="opt" data-k="d">D. the sub-tasks are decided by the model at runtime instead of fixed in code</button>
+  </div>
+  <div class="why"><b>D.</b> In sectioning, your code defines the sub-tasks. An orchestrator <em>plans</em> them based on the input.</div>
+</div>
+
+<nav class="pager">
+  <a href="how-llms-work.html">← How LLMs Work</a>
+  <a href="tools-mcp.html">Tool Design &amp; MCP →</a>
+</nav>
+<footer class="site">CCA Study Hub · personal study notes · not an official Anthropic resource</footer>
+
+</article>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

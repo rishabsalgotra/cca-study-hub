@@ -109,7 +109,7 @@ pre:hover .copy-btn, .copy-btn:focus { opacity: 1; }
 }
 .nav-topic:hover { background: var(--surface-2); }
 .nav-topic.active { background: var(--accent-soft); color: var(--accent); }
-.nav-topic .badge { margin-left: auto; font-size: 10.5px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 99px; padding: 0 7px; }
+.nav-topic .badge { white-space: nowrap; flex: none; margin-left: auto; font-size: 10.5px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 99px; padding: 0 7px; }
 .nav-topic.soon { color: var(--muted); font-weight: 500; pointer-events: none; }
 .nav-sections { list-style: none; margin: 4px 0 8px 14px; padding: 0 0 0 10px; border-left: 1px solid var(--border); }
 .nav-sections li { margin: 0; }
@@ -183,6 +183,11 @@ a.card:hover { border-color: var(--accent); transform: translateY(-2px); }
 .diagram svg .coin-ok { fill: var(--ok); stroke: var(--surface); stroke-width: 2; }
 .diagram svg .coin-info { fill: var(--info); stroke: var(--surface); stroke-width: 2; }
 .diagram svg .coin-text { fill: var(--bg); font-size: 11px; font-weight: 800; }
+.diagram svg .box-bad { fill: var(--bad-soft); stroke: var(--bad); }
+.diagram svg .lbl-bad { fill: var(--bad); font-size: 12px; font-weight: 700; }
+.diagram svg .line-ok { stroke: var(--ok); fill: none; stroke-width: 1.8; }
+.diagram svg .line-bad { stroke: var(--bad); fill: none; stroke-width: 1.8; }
+.diagram svg .mono { font-family: var(--mono); font-size: 11.5px; }
 .diagram svg .light-red { fill: var(--bad); }
 .diagram svg .light-green { fill: var(--ok); }
 .anim-btn {

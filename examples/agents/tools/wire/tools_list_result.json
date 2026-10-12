@@ -1,0 +1,48 @@
+{
+  "ttlMs": 0,
+  "cacheScope": "private",
+  "tools": [
+    {
+      "name": "search_tickets",
+      "description": "Search support tickets by keyword. Returns id, title and status for each match.\nUse ticket://{id} to read the full text of one ticket.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "description": "Keyword to match in the title, case-insensitive.",
+            "title": "Query",
+            "type": "string"
+          },
+          "status": {
+            "default": "any",
+            "description": "Filter by status.",
+            "enum": [
+              "open",
+              "closed",
+              "any"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "limit": {
+            "default": 10,
+            "description": "Max tickets to return.",
+            "maximum": 50,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "search_ticketsArguments"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    }
+  ],
+  "resultType": "complete"
+}

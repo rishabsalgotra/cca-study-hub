@@ -1,0 +1,19 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\n  \"id\": \"T-1\",\n  \"title\": \"Login fails with SSO\",\n  \"status\": \"open\"\n}"
+    }
+  ],
+  "structuredContent": {
+    "result": [
+      {
+        "id": "T-1",
+        "title": "Login fails with SSO",
+        "status": "open"
+      }
+    ]
+  },
+  "isError": false,
+  "resultType": "complete"
+}
