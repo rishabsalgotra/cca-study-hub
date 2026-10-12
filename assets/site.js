@@ -15,6 +15,7 @@ const TOPICS = [
   { id: "tools-mcp", title: "Tool Design & MCP", href: "topics/tools-mcp.html", icon: "⚙", group: "Topics", ready: true, domain: "D4" },
   { id: "harness-engineering", title: "Harness Engineering", href: "topics/harness-engineering.html", icon: "⛭", group: "Topics", ready: true, domain: "D1 · D2 · D5" },
   { id: "programmable-money", title: "Programmable Money", href: "topics/programmable-money.html", icon: "$", group: "Fintech", ready: true, domain: "Fintech" },
+  { id: "tps-architecture", title: "1K vs 1M TPS", href: "topics/tps-architecture.html", icon: "⇶", group: "Enterprise architecture", ready: true, domain: "AWS" },
   { id: "prompt-engineering", title: "Prompt Eng. & Structured Output", href: "topics/prompt-engineering.html", icon: "✎", group: "Coming next", ready: false, domain: "D3" },
   { id: "context-reliability", title: "Context & Reliability", href: "topics/context-reliability.html", icon: "◎", group: "Coming next", ready: false, domain: "D5" },
 ];

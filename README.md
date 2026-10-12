@@ -7,7 +7,8 @@ cca-site/
 ├── index.html              home page (exam overview + topic cards)
 ├── assets/
 │   ├── style.css           shared styles (light/dark)
-│   └── site.js             menu, TOC, search, theme, quiz, progress, TOPICS list
+│   ├── site.js             menu, TOC, search, theme, quiz, progress, TOPICS list
+│   ├── tps.css · tps.js    page-scoped theme, animation engine and simulator for Topic 7
 └── topics/
     ├── claude-code.html    Topic 1
     ├── how-llms-work.html  Topic 2
@@ -15,6 +16,7 @@ cca-site/
     ├── tools-mcp.html             Topic 4 (D4)
     ├── harness-engineering.html   Topic 5 (D1 · D2 · D5)
     ├── programmable-money.html    Topic 6 (Fintech): tokenized deposits & stablecoins
+    ├── tps-architecture.html      Topic 7 (Enterprise architecture): 1K vs 1M TPS explorer
     └── _template.html      copy this to add a topic
 ```
 

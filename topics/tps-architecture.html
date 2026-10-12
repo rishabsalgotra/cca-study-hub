@@ -1,0 +1,870 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>1K vs 1M TPS</title>
+<meta name="description" content="Interactive architecture explorer: how to reach 1,000 TPS on an AWS API Gateway + Lambda platform with non-scalable downstream systems, compared with a massively distributed 1-million-TPS sharded architecture.">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/tps.css">
+</head>
+<body class="tps" data-root=".." data-topic="tps-architecture">
+<main>
+<article class="content">
+
+<header class="tps-hero">
+  <div class="eyebrow">Topic 7 · Enterprise architecture</div>
+  <h1>Designing for 1,000 TPS Without Building for 1 Million</h1>
+  <p class="lede">An interactive architecture whiteboard for engineering leadership and application owners. It shows how an existing Amazon API Gateway + AWS Lambda platform can sustain <strong>1,000 transactions per second</strong> when the real constraint is the downstream systems, and why that does not call for blockchain-style sharding or a massive distributed compute layer.</p>
+  <div class="motion-row">
+    <button class="tbtn" type="button" data-reduce-toggle aria-pressed="false">Reduced motion: off</button>
+    <button class="tbtn" type="button" data-labels-toggle aria-pressed="true">Labels: on</button>
+    <span>Animations follow your system's reduced-motion setting until you choose otherwise. Every diagram works without animation.</span>
+  </div>
+</header>
+
+<!-- ============================================================ -->
+<h2 id="overview" data-nav="A. Executive overview" data-keywords="ingress processing sustainable throughput target principle">A. Executive overview</h2>
+<p>"TPS" hides three different numbers. Most throughput incidents happen because a team measured one of them and assumed the other two.</p>
+<div class="concepts">
+  <div class="concept"><h4><span class="dot"></span>Ingress throughput</h4><p>How quickly requests can <em>enter</em> the platform: API Gateway, authentication, validation, enqueueing. Managed AWS services usually make this the easiest number to raise.</p></div>
+  <div class="concept"><h4><span class="dot"></span>Processing throughput</h4><p>How quickly transactions are <em>completed</em> end to end, including every downstream call. It's bounded by the slowest required step, often a legacy system.</p></div>
+  <div class="concept"><h4><span class="dot"></span>Sustainable throughput</h4><p>The rate the <em>whole system</em> can run at <strong>indefinitely</strong> while still meeting its latency, availability and data-integrity requirements. This is the number to design and test for.</p></div>
+</div>
+
+<div class="metrics">
+  <div class="metric target"><div class="k">Target arrival rate</div><div class="v">1,000 TPS</div><div class="n"><span class="tag-design">Design target</span></div></div>
+  <div class="metric target"><div class="k">Required sustained completion</div><div class="v">1,000 TPS</div><div class="n"><span class="tag-design">Design target</span> arrivals must be completed, not just accepted</div></div>
+  <div class="metric"><div class="k">Burst capacity</div><div class="v" id="m-burst">configurable</div><div class="n">Set in the <a href="#simulator">simulator</a>; bounded by buffer durability and the API's acceptance contract</div></div>
+  <div class="metric"><div class="k">Downstream capacity (A · B · C)</div><div class="v" id="m-down">configurable</div><div class="n">TPS per system: legacy core · corporate banking · partner API. Measure, don't assume.</div></div>
+</div>
+<div class="callout warn"><span class="title">1,000 TPS is a design target, not a demonstrated result</span>Nothing on this page has been load-tested against your systems. The numbers are planning inputs. Prove the target with service-specific capacity tests and an end-to-end load test before committing to it.</div>
+
+<div class="principle">“<b>Scale the ingress independently, control the processing rate, and remove or isolate downstream bottlenecks.</b> A queue absorbs bursts; it does not create processing capacity.”</div>
+
+<div class="two">
+  <div class="card"><h4>What 1,000 TPS means in practice</h4>
+    <ul>
+      <li>86.4 million transactions per day at a sustained rate, or a much shorter peak window.</li>
+      <li>With 200 ms average processing time, about <strong>200 transactions are in flight</strong> at any moment (Little's law: in-flight = rate × time).</li>
+      <li>If the legacy core sustains 300 TPS, no amount of Lambda concurrency completes 1,000 TPS of core-bound work. You must reduce, isolate, batch or partition that work.</li>
+    </ul></div>
+  <div class="card"><h4>The board-level answer</h4>
+    <ul>
+      <li>Keep API Gateway + Lambda for ingress. It is not the bottleneck.</li>
+      <li>Add durable queues, capped workers and downstream-specific adapters, so each system receives only what it can absorb.</li>
+      <li>Make async the default where the business contract allows it; keep a bounded, protected sync path where it doesn't.</li>
+      <li>Invest in idempotency, status tracking and reconciliation. That is where correctness lives.</li>
+    </ul></div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="compare" data-nav="B. Architecture comparison" data-keywords="1M TPS NEAR sharding 1K TPS AWS API Gateway Lambda SQS diagram">B. Architecture comparison</h2>
+<p>Switch between the two architectures. Select any component (click it, or Tab to it and press Enter) to see its purpose, failure modes and operational trade-offs below the diagram.</p>
+
+<div class="arch-tabs" role="tablist" aria-label="Architecture" id="arch-tabs">
+  <button role="tab" id="tab-1k" aria-controls="panel-1k" aria-selected="true" tabindex="0" data-arch="1k">1,000 TPS · enterprise AWS<span class="rec">Recommended</span><small>Buffer, pace and protect the downstream systems</small></button>
+  <button role="tab" id="tab-1m" aria-controls="panel-1m" aria-selected="false" tabindex="-1" data-arch="1m">1,000,000 TPS · massively distributed<small>Sharded execution, conceptual (inspired by NEAR's benchmark)</small></button>
+</div>
+
+<div class="arch-panel" id="panel-1k" role="tabpanel" aria-labelledby="tab-1k">
+  <div class="legend">
+    <span><i style="border-color:#2b88b8"></i>asynchronous path</span>
+    <span><i style="border-color:var(--violet);border-top-style:dashed"></i>synchronous path (bounded wait)</span>
+    <span><i style="border-color:var(--accent);border-top-style:dotted"></i>HTTP 202 response</span>
+    <span><i style="border-color:#3f7f8f;border-top-style:dotted"></i>status reads/writes</span>
+    <span><i style="border-color:var(--bad);border-top-style:dashed"></i>dead-letter</span>
+    <span>dashed box = optional</span>
+  </div>
+  <figure class="whiteboard wb">
+  <div class="scroll">
+  <svg viewBox="0 0 1250 600" role="group" aria-labelledby="k-title k-desc">
+    <title id="k-title">Recommended 1,000 TPS enterprise AWS architecture</title>
+    <desc id="k-desc">Corporate clients call Amazon API Gateway, optionally behind AWS WAF. Requests are authenticated, validated and rate-limited before an ingress Lambda. Synchronous operations follow a bounded-wait path straight to the legacy core's adapter. Asynchronous operations are written to a transaction status store, acknowledged with HTTP 202 and a correlation ID, and routed, optionally via EventBridge, to one SQS queue per downstream system. Capped worker pools and downstream-specific adapters call the legacy core, the corporate banking application and a partner API. Repeatedly failing messages go to dead-letter queues. Workers update the status store, and clients read it through a status API or callback.</desc>
+    <defs>
+      <marker id="k-mk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5a77a8"/></marker>
+      <marker id="k-mkc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#38bdf8"/></marker>
+      <marker id="k-mkv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a78bfa"/></marker>
+      <marker id="k-mkr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f87171"/></marker>
+      <marker id="k-mks" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3f7f8f"/></marker>
+    </defs>
+    <rect class="zone" x="155" y="140" width="475" height="205" rx="14"/>
+    <text x="540" y="160" text-anchor="end" class="lbl">EDGE &amp; INGRESS · scales out</text>
+    <rect class="zone" x="735" y="70" width="378" height="365" rx="14"/>
+    <text x="745" y="90" class="lbl">CONTROLLED PROCESSING · paced per system</text>
+    <rect class="zone" x="1118" y="70" width="128" height="365" rx="14"/>
+    <text x="1182" y="90" text-anchor="middle" class="lbl">EXISTING SYSTEMS</text>
+    <text x="805" y="32" text-anchor="middle" class="lbl-v">SYNCHRONOUS PATH · bounded wait · explicit timeout · fast 429/503 when saturated</text>
+
+    <path class="wire sync" d="M550,228 L550,50 L1060,50 L1060,100" marker-end="url(#k-mkv)"/>
+    <path class="wire" d="M140,260 L168,260" marker-end="url(#k-mk)"/>
+    <path class="wire" d="M300,260 L323,260" marker-end="url(#k-mk)"/>
+    <path class="wire" d="M460,260 L483,260" marker-end="url(#k-mk)"/>
+    <path class="wire async" d="M615,260 L633,260" marker-end="url(#k-mkc)"/>
+    <path class="wire async" d="M725,260 L740,260 L740,130 L748,130" marker-end="url(#k-mkc)"/>
+    <path class="wire async" d="M740,260 L748,260" marker-end="url(#k-mkc)"/>
+    <path class="wire async" d="M740,260 L740,390 L748,390" marker-end="url(#k-mkc)"/>
+    <path class="wire async" d="M860,130 L888,130" marker-end="url(#k-mkc)"/>
+    <path class="wire async" d="M860,260 L888,260" marker-end="url(#k-mkc)"/>
+    <path class="wire async" d="M860,390 L888,390" marker-end="url(#k-mkc)"/>
+    <path class="wire async" d="M990,130 L1013,130" marker-end="url(#k-mkc)"/>
+    <path class="wire async" d="M990,260 L1013,260" marker-end="url(#k-mkc)"/>
+    <path class="wire async" d="M990,390 L1013,390" marker-end="url(#k-mkc)"/>
+    <path class="wire async" d="M1105,130 L1123,130" marker-end="url(#k-mkc)"/>
+    <path class="wire async" d="M1105,260 L1123,260" marker-end="url(#k-mkc)"/>
+    <path class="wire async" d="M1105,390 L1123,390" marker-end="url(#k-mkc)"/>
+    <path class="wire status" d="M235,196 L235,226"/>
+    <path class="wire dlq" d="M805,418 L805,453" marker-end="url(#k-mkr)"/>
+    <text x="813" y="441" class="lbl-r">maxReceiveCount</text>
+    <path class="wire status" d="M940,418 L940,453" marker-end="url(#k-mks)"/>
+    <text x="948" y="441" class="lbl">status updates</text>
+    <path class="wire status" d="M550,292 L550,545 L997,545 L997,513" marker-end="url(#k-mks)"/>
+    <text x="560" y="538" class="lbl">write ACCEPTED + idempotency key</text>
+    <path class="wire resp" d="M520,292 L520,318 L110,318 L110,294" marker-end="url(#k-mkc)"/>
+    <text x="315" y="336" text-anchor="middle" class="lbl-c">HTTP 202 Accepted + correlation ID</text>
+    <path class="wire status" d="M70,292 L70,470 L168,470" marker-end="url(#k-mks)"/>
+    <text x="78" y="405" class="lbl">poll or callback</text>
+    <path class="wire status" d="M245,500 L245,575 L1060,575 L1060,515" marker-end="url(#k-mks)"/>
+    <text x="650" y="593" text-anchor="middle" class="lbl">status API reads the status store</text>
+
+    <path class="flow c" d="M140,260 L615,260"/>
+    <path class="flow c" d="M725,260 L740,260 L740,130 L1123,130"/>
+    <path class="flow c" d="M740,260 L1123,260"/>
+    <path class="flow c" d="M740,260 L740,390 L1123,390"/>
+    <path class="flow v" d="M550,228 L550,50 L1060,50 L1060,100"/>
+    <path class="flow c" d="M520,318 L110,318"/>
+
+    <g class="node" data-node="clients" tabindex="0" role="button" aria-label="Corporate clients and applications: show details"><rect x="20" y="228" width="120" height="64" rx="10"/><text x="80" y="255" text-anchor="middle" class="t1">Corporate</text><text x="80" y="276" text-anchor="middle" class="t2">clients &amp; apps</text></g>
+    <g class="node aws optional" data-node="waf" tabindex="0" role="button" aria-label="AWS WAF: show details"><rect x="170" y="160" width="130" height="36" rx="9"/><text x="235" y="183" text-anchor="middle" class="t1">AWS WAF</text></g>
+    <g class="node aws" data-node="apigw" tabindex="0" role="button" aria-label="Amazon API Gateway: show details"><rect x="170" y="228" width="130" height="64" rx="10"/><text x="235" y="255" text-anchor="middle" class="t1">API Gateway</text><text x="235" y="276" text-anchor="middle" class="t2">Amazon · REST/HTTP</text></g>
+    <g class="node aws" data-node="auth" tabindex="0" role="button" aria-label="Authentication, authorization, validation and rate limiting: show details"><rect x="325" y="228" width="135" height="64" rx="10"/><text x="392" y="255" text-anchor="middle" class="t1">Auth · validate</text><text x="392" y="276" text-anchor="middle" class="t2">rate limit · quotas</text></g>
+    <g class="node aws" data-node="lambda" tabindex="0" role="button" aria-label="AWS Lambda ingress and orchestration: show details"><rect x="485" y="228" width="130" height="64" rx="10"/><text x="550" y="255" text-anchor="middle" class="t1">AWS Lambda</text><text x="550" y="276" text-anchor="middle" class="t2">ingress handler</text></g>
+    <g class="node aws optional" data-node="eventbridge" tabindex="0" role="button" aria-label="Amazon EventBridge, optional: show details"><rect x="635" y="236" width="90" height="48" rx="9"/><text x="680" y="257" text-anchor="middle" class="t1" style="font-size:13px">EventBridge</text><text x="680" y="274" text-anchor="middle" class="t2">optional</text></g>
+    <g class="node aws" data-node="sqs" tabindex="0" role="button" aria-label="Amazon SQS queue A: show details"><rect x="750" y="102" width="110" height="56" rx="9"/><text x="805" y="126" text-anchor="middle" class="t1">SQS queue A</text><text x="805" y="146" text-anchor="middle" class="t2">legacy core</text></g>
+    <g class="node aws" data-node="sqs" tabindex="0" role="button" aria-label="Amazon SQS queue B: show details"><rect x="750" y="232" width="110" height="56" rx="9"/><text x="805" y="256" text-anchor="middle" class="t1">SQS queue B</text><text x="805" y="276" text-anchor="middle" class="t2">corp banking</text></g>
+    <g class="node aws" data-node="sqs" tabindex="0" role="button" aria-label="Amazon SQS queue C: show details"><rect x="750" y="362" width="110" height="56" rx="9"/><text x="805" y="386" text-anchor="middle" class="t1">SQS queue C</text><text x="805" y="406" text-anchor="middle" class="t2">partner API</text></g>
+    <g class="node aws" data-node="workers" tabindex="0" role="button" aria-label="Worker pool A: show details"><rect x="890" y="102" width="100" height="56" rx="9"/><text x="940" y="126" text-anchor="middle" class="t1">Workers A</text><text x="940" y="146" text-anchor="middle" class="t2">≤ 60 in flight</text></g>
+    <g class="node aws" data-node="workers" tabindex="0" role="button" aria-label="Worker pool B: show details"><rect x="890" y="232" width="100" height="56" rx="9"/><text x="940" y="256" text-anchor="middle" class="t1">Workers B</text><text x="940" y="276" text-anchor="middle" class="t2">≤ 120 in flight</text></g>
+    <g class="node aws" data-node="workers" tabindex="0" role="button" aria-label="Worker pool C: show details"><rect x="890" y="362" width="100" height="56" rx="9"/><text x="940" y="386" text-anchor="middle" class="t1">Workers C</text><text x="940" y="406" text-anchor="middle" class="t2">≤ 40 in flight</text></g>
+    <g class="node" data-node="adapter" tabindex="0" role="button" aria-label="Adapter A: show details"><rect x="1015" y="102" width="90" height="56" rx="9"/><text x="1060" y="126" text-anchor="middle" class="t1">Adapter A</text><text x="1060" y="146" text-anchor="middle" class="t2">≤ 300/s</text></g>
+    <g class="node" data-node="adapter" tabindex="0" role="button" aria-label="Adapter B: show details"><rect x="1015" y="232" width="90" height="56" rx="9"/><text x="1060" y="256" text-anchor="middle" class="t1">Adapter B</text><text x="1060" y="276" text-anchor="middle" class="t2">≤ 600/s</text></g>
+    <g class="node" data-node="adapter" tabindex="0" role="button" aria-label="Adapter C: show details"><rect x="1015" y="362" width="90" height="56" rx="9"/><text x="1060" y="386" text-anchor="middle" class="t1">Adapter C</text><text x="1060" y="406" text-anchor="middle" class="t2">≤ 200/s</text></g>
+    <g class="node down" data-node="legacy" tabindex="0" role="button" aria-label="Legacy core system: show details"><rect x="1125" y="102" width="115" height="56" rx="9"/><text x="1182" y="126" text-anchor="middle" class="t1">Legacy core</text><text x="1182" y="146" text-anchor="middle" class="t2">~300 TPS</text></g>
+    <g class="node down" data-node="corp" tabindex="0" role="button" aria-label="Corporate banking application: show details"><rect x="1125" y="232" width="115" height="56" rx="9"/><text x="1182" y="256" text-anchor="middle" class="t1">Corp. banking</text><text x="1182" y="276" text-anchor="middle" class="t2">~600 TPS</text></g>
+    <g class="node down" data-node="partner" tabindex="0" role="button" aria-label="External partner API: show details"><rect x="1125" y="362" width="115" height="56" rx="9"/><text x="1182" y="386" text-anchor="middle" class="t1">Partner API</text><text x="1182" y="406" text-anchor="middle" class="t2">~200 TPS quota</text></g>
+    <g class="node bad" data-node="dlq" tabindex="0" role="button" aria-label="Dead-letter queues: show details"><rect x="750" y="455" width="110" height="50" rx="9"/><text x="805" y="477" text-anchor="middle" class="t1">DLQs</text><text x="805" y="496" text-anchor="middle" class="t2">one per queue</text></g>
+    <g class="node store" data-node="status" tabindex="0" role="button" aria-label="Transaction status store: show details"><rect x="890" y="455" width="215" height="58" rx="9"/><text x="997" y="479" text-anchor="middle" class="t1">Transaction status store</text><text x="997" y="499" text-anchor="middle" class="t2">DynamoDB or existing DB</text></g>
+    <g class="node" data-node="statusapi" tabindex="0" role="button" aria-label="Client status API or callback: show details"><rect x="170" y="440" width="150" height="60" rx="10"/><text x="245" y="465" text-anchor="middle" class="t1">Status API</text><text x="245" y="485" text-anchor="middle" class="t2">GET /tx/{id} · callback</text></g>
+    <g class="node" data-node="sync" tabindex="0" role="button" aria-label="Synchronous path: show details"><rect x="690" y="20" width="0" height="0"/><text x="420" y="44" text-anchor="middle" class="lbl-v" style="text-decoration:underline">what stays synchronous?</text></g>
+    <g class="node" data-node="resp202" tabindex="0" role="button" aria-label="HTTP 202 Accepted contract: show details"><rect x="200" y="322" width="0" height="0"/><text x="315" y="356" text-anchor="middle" class="lbl" style="text-decoration:underline">what does 202 promise?</text></g>
+  </svg>
+  </div>
+  <figcaption>Recommended architecture. The example capacities (300 / 600 / 200 TPS) and worker limits are illustrative. Each worker limit ≈ downstream TPS × average call time. Click a component for details.</figcaption>
+  </figure>
+  <div class="chips" aria-label="Cross-cutting services">
+    <button class="chip-btn" type="button" data-node="cloudwatch">Amazon CloudWatch <span class="opt">metrics · alarms</span></button>
+    <button class="chip-btn" type="button" data-node="secrets">Secrets Manager &amp; KMS <span class="opt">secrets · encryption</span></button>
+    <button class="chip-btn" type="button" data-node="sync">Synchronous path</button>
+    <button class="chip-btn" type="button" data-node="resp202">202 Accepted contract</button>
+  </div>
+</div>
+
+<div class="arch-panel" id="panel-1m" role="tabpanel" aria-labelledby="tab-1m" hidden>
+  <figure class="whiteboard wb">
+  <div class="scroll">
+  <svg viewBox="0 0 1250 600" role="group" aria-labelledby="m-title m-desc">
+    <title id="m-title">Conceptual 1 million TPS sharded architecture</title>
+    <desc id="m-desc">Clients or transaction generators send transactions to a distributed network ingress. Transaction routing assigns each transaction to the shard that owns its account. Many sharded execution groups, each with its own nodes and its own partition of state, execute in parallel and exchange cross-shard receipts. A consensus and coordination layer orders and finalizes results, which are then published as transaction results.</desc>
+    <defs>
+      <marker id="m-mk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5a77a8"/></marker>
+      <marker id="m-mkc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#38bdf8"/></marker>
+      <marker id="m-mkv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a78bfa"/></marker>
+    </defs>
+    <rect class="zone" x="495" y="40" width="460" height="520" rx="14"/>
+    <text x="725" y="30" text-anchor="middle" class="lbl-c">SHARDED EXECUTION GROUPS · 8 drawn (the benchmark used 70)</text>
+    <path class="wire" d="M150,290 L178,290" marker-end="url(#m-mkc)"/>
+    <path class="wire" d="M315,290 L343,290" marker-end="url(#m-mkc)"/>
+    <path class="wire" d="M475,290 L510,290"/>
+    <path class="wire" d="M510,50 L510,485"/>
+    <path class="wire" d="M510,50 L725,50 L725,485"/>
+    <path class="wire" d="M510,110 L523,110" marker-end="url(#m-mk)"/><path class="wire" d="M510,235 L523,235" marker-end="url(#m-mk)"/>
+    <path class="wire" d="M510,360 L523,360" marker-end="url(#m-mk)"/><path class="wire" d="M510,485 L523,485" marker-end="url(#m-mk)"/>
+    <path class="wire" d="M725,110 L743,110" marker-end="url(#m-mk)"/><path class="wire" d="M725,235 L743,235" marker-end="url(#m-mk)"/>
+    <path class="wire" d="M725,360 L743,360" marker-end="url(#m-mk)"/><path class="wire" d="M725,485 L743,485" marker-end="url(#m-mk)"/>
+    <path class="wire" d="M925,110 L973,110" marker-end="url(#m-mk)"/><path class="wire" d="M925,235 L973,235" marker-end="url(#m-mk)"/>
+    <path class="wire" d="M925,360 L973,360" marker-end="url(#m-mk)"/><path class="wire" d="M925,485 L973,485" marker-end="url(#m-mk)"/>
+    <path class="wire" d="M1085,290 L1108,290" marker-end="url(#m-mkc)"/>
+    <path class="wire xshard" d="M705,140 C 760,170 690,330 745,350" marker-end="url(#m-mkv)"/>
+    <path class="wire xshard" d="M705,265 C 735,285 715,375 745,395" marker-end="url(#m-mkv)"/>
+    <path class="wire xshard" d="M925,140 C 962,220 962,400 925,455" marker-end="url(#m-mkv)"/>
+    <text x="725" y="553" text-anchor="middle" class="lbl-v">dashed violet = cross-shard receipts (the benchmark used uniform cross-shard traffic)</text>
+    <path class="flow c" d="M150,290 L510,290"/>
+    <path class="flow v" d="M705,140 C 760,170 690,330 745,350"/>
+    <path class="flow v" d="M925,140 C 962,220 962,400 925,455"/>
+    <path class="flow g" d="M1085,290 L1108,290"/>
+
+    <g class="node" data-node="gen" tabindex="0" role="button" aria-label="Clients or transaction generators: show details"><rect x="20" y="255" width="130" height="70" rx="10"/><text x="85" y="285" text-anchor="middle" class="t1">Clients / tx</text><text x="85" y="306" text-anchor="middle" class="t2">generators</text></g>
+    <g class="node" data-node="netingress" tabindex="0" role="button" aria-label="Distributed network ingress: show details"><rect x="180" y="255" width="135" height="70" rx="10"/><text x="247" y="285" text-anchor="middle" class="t1">Network ingress</text><text x="247" y="306" text-anchor="middle" class="t2">RPC · peers</text></g>
+    <g class="node" data-node="routing" tabindex="0" role="button" aria-label="Transaction routing: show details"><rect x="345" y="255" width="130" height="70" rx="10"/><text x="410" y="285" text-anchor="middle" class="t1">Tx routing</text><text x="410" y="306" text-anchor="middle" class="t2">account → shard</text></g>
+    <g class="node" data-node="shard" tabindex="0" role="button" aria-label="Shard 1: show details"><rect x="525" y="60" width="180" height="100" rx="10"/><text x="537" y="82" class="t1">Shard 1</text><circle class="shape" cx="565" cy="118" r="15"/><circle class="shape" cx="610" cy="118" r="15"/><rect class="st" x="645" y="98" width="48" height="40" rx="6"/><text x="669" y="122" text-anchor="middle" class="t2">state</text><text x="587" y="152" text-anchor="middle" class="t2">2 producers</text></g>
+    <g class="node" data-node="shard" tabindex="0" role="button" aria-label="Shard 2: show details"><rect x="525" y="185" width="180" height="100" rx="10"/><text x="537" y="207" class="t1">Shard 2</text><circle class="shape" cx="565" cy="243" r="15"/><circle class="shape" cx="610" cy="243" r="15"/><rect class="st" x="645" y="223" width="48" height="40" rx="6"/><text x="669" y="247" text-anchor="middle" class="t2">state</text><text x="587" y="277" text-anchor="middle" class="t2">2 producers</text></g>
+    <g class="node" data-node="shard" tabindex="0" role="button" aria-label="Shard 3: show details"><rect x="525" y="310" width="180" height="100" rx="10"/><text x="537" y="332" class="t1">Shard 3</text><circle class="shape" cx="565" cy="368" r="15"/><circle class="shape" cx="610" cy="368" r="15"/><rect class="st" x="645" y="348" width="48" height="40" rx="6"/><text x="669" y="372" text-anchor="middle" class="t2">state</text><text x="587" y="402" text-anchor="middle" class="t2">2 producers</text></g>
+    <g class="node" data-node="shard" tabindex="0" role="button" aria-label="Shard 4: show details"><rect x="525" y="435" width="180" height="100" rx="10"/><text x="537" y="457" class="t1">Shard 4</text><circle class="shape" cx="565" cy="493" r="15"/><circle class="shape" cx="610" cy="493" r="15"/><rect class="st" x="645" y="473" width="48" height="40" rx="6"/><text x="669" y="497" text-anchor="middle" class="t2">state</text><text x="587" y="527" text-anchor="middle" class="t2">2 producers</text></g>
+    <g class="node" data-node="shard" tabindex="0" role="button" aria-label="Shard 5: show details"><rect x="745" y="60" width="180" height="100" rx="10"/><text x="757" y="82" class="t1">Shard 5</text><circle class="shape" cx="785" cy="118" r="15"/><circle class="shape" cx="830" cy="118" r="15"/><rect class="st" x="865" y="98" width="48" height="40" rx="6"/><text x="889" y="122" text-anchor="middle" class="t2">state</text><text x="807" y="152" text-anchor="middle" class="t2">2 producers</text></g>
+    <g class="node" data-node="shard" tabindex="0" role="button" aria-label="Shard 6: show details"><rect x="745" y="185" width="180" height="100" rx="10"/><text x="757" y="207" class="t1">Shard 6</text><circle class="shape" cx="785" cy="243" r="15"/><circle class="shape" cx="830" cy="243" r="15"/><rect class="st" x="865" y="223" width="48" height="40" rx="6"/><text x="889" y="247" text-anchor="middle" class="t2">state</text><text x="807" y="277" text-anchor="middle" class="t2">2 producers</text></g>
+    <g class="node" data-node="shard" tabindex="0" role="button" aria-label="Shard 7: show details"><rect x="745" y="310" width="180" height="100" rx="10"/><text x="757" y="332" class="t1">Shard 7</text><circle class="shape" cx="785" cy="368" r="15"/><circle class="shape" cx="830" cy="368" r="15"/><rect class="st" x="865" y="348" width="48" height="40" rx="6"/><text x="889" y="372" text-anchor="middle" class="t2">state</text><text x="807" y="402" text-anchor="middle" class="t2">2 producers</text></g>
+    <g class="node" data-node="shard" tabindex="0" role="button" aria-label="Shard 70: show details"><rect x="745" y="435" width="180" height="100" rx="10"/><text x="757" y="457" class="t1">Shard 70</text><circle class="shape" cx="785" cy="493" r="15"/><circle class="shape" cx="830" cy="493" r="15"/><rect class="st" x="865" y="473" width="48" height="40" rx="6"/><text x="889" y="497" text-anchor="middle" class="t2">state</text><text x="807" y="527" text-anchor="middle" class="t2">2 producers</text></g>
+    <g class="node" data-node="consensus" tabindex="0" role="button" aria-label="Consensus and coordination: show details"><rect x="975" y="60" width="110" height="475" rx="10"/><text x="1030" y="280" text-anchor="middle" class="t1">Consensus</text><text x="1030" y="302" text-anchor="middle" class="t2">block production</text><text x="1030" y="320" text-anchor="middle" class="t2">&amp; finality</text></g>
+    <g class="node" data-node="results" tabindex="0" role="button" aria-label="Transaction results: show details"><rect x="1110" y="255" width="128" height="70" rx="10"/><text x="1174" y="285" text-anchor="middle" class="t1">Tx results</text><text x="1174" y="306" text-anchor="middle" class="t2">finalized outcomes</text></g>
+  </svg>
+  </div>
+  <figcaption>Conceptual diagram of horizontal scale-out by sharding. It is inspired by, but not a copy of, the referenced benchmark's topology. Every shard owns a slice of accounts and state and executes in parallel; receipts cross shards; consensus coordinates the result.</figcaption>
+  </figure>
+  <div class="facts">
+    <div class="verified"><h4>✓ Verified from the repository README</h4>
+      <ul>
+        <li>Source: <a href="https://github.com/near/one-million-tps" rel="noopener">github.com/near/one-million-tps</a>, a NEAR Protocol network benchmark whose stated goal is 1 million transactions per second.</li>
+        <li><strong>140 nodes on Google Cloud</strong> (Compute Engine, <code>c4d-highmem-16</code>), spread across us-central1, us-east1 and us-east4.</li>
+        <li><strong>70 shards</strong>, two chunk producer nodes per shard.</li>
+        <li>Workload: <strong>native NEAR token transfers only</strong>, 1 million accounts, uniform cross-shard traffic.</li>
+        <li>Load comes from a transaction generator built into the node software, not from external clients.</li>
+        <li>Estimated cost "around $700 per hour" (README estimate; actual pricing varies).</li>
+        <li>The README describes the setup; it does not itself publish a measured result. Check NEAR's own announcements for achieved figures.</li>
+      </ul></div>
+    <div class="conceptual"><h4>⚠ Conceptual (this diagram)</h4>
+      <ul>
+        <li>The exact boxes, flows and names are a teaching model of a sharded ledger, not the benchmark's internal topology.</li>
+        <li>8 shards are drawn to show the pattern; the benchmark used 70.</li>
+        <li>"Network ingress", "routing" and "consensus" are simplified stand-ins for NEAR's RPC, sharding and block-production mechanisms.</li>
+        <li>Not a like-for-like comparison: native token transfers on a system that owns its state are very different from enterprise API calls into legacy systems you can't shard.</li>
+      </ul></div>
+  </div>
+</div>
+
+<div class="info-panel" id="info-panel" aria-live="polite"></div>
+
+<h3>Side by side</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Dimension</th><th>1M TPS distributed (sharded)</th><th>1K TPS enterprise AWS (recommended)</th></tr></thead>
+<tbody>
+<tr><td>Where throughput comes from</td><td>Partitioning state and work across many shards that execute in parallel</td><td>Independent ingress scaling + controlled, isolated processing paced to each downstream system</td></tr>
+<tr><td>Who owns the state</td><td>The platform itself (each shard owns its slice)</td><td>Existing systems of record you usually can't re-partition</td></tr>
+<tr><td>Binding constraint</td><td>Network, coordination, hot shards</td><td>Legacy and partner capacity, connection limits, latency</td></tr>
+<tr><td>Consistency model</td><td>Consensus and finality across shards</td><td>Systems of record + idempotency + reconciliation</td></tr>
+<tr><td>Infrastructure</td><td>Hundreds of always-on nodes (140 in the benchmark)</td><td>Managed, mostly serverless services that scale with demand</td></tr>
+<tr><td>Operational complexity</td><td>Very high: distributed protocol operations</td><td>Moderate: queues, alarms, DLQ runbooks, reconciliation</td></tr>
+<tr><td>Fits when…</td><td>You own a partitionable workload and must scale far beyond a single database</td><td>Your target is ~1,000 TPS and the bottleneck is downstream capacity</td></tr>
+</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="flow" data-nav="C. Animated data flow" data-keywords="animation queue workers retries throttling dead-letter parallel shards">C. Animated data flow</h2>
+<p>Requests are drawn as moving circles. <span class="illustrative">ILLUSTRATIVE ANIMATION: not a live AWS or NEAR simulation</span>. Rates and timings are scaled down so you can follow individual messages; the <a href="#simulator">simulator</a> below does the arithmetic at real scale.</p>
+
+<div class="toolbar" role="toolbar" aria-label="Animation controls">
+  <button class="tbtn primary" type="button" id="anim-play">▶ Play</button>
+  <button class="tbtn" type="button" id="anim-reset">↺ Reset</button>
+  <span class="grp">Architecture
+    <span class="seg" id="anim-arch"><button type="button" data-arch="1k" aria-pressed="true">1K · buffered</button><button type="button" data-arch="1m" aria-pressed="false">1M · sharded</button></span></span>
+  <span class="grp">Speed
+    <span class="seg" id="anim-speed"><button type="button" data-speed="0.5" aria-pressed="false">Slow</button><button type="button" data-speed="1" aria-pressed="true">Normal</button><button type="button" data-speed="2" aria-pressed="false">Fast</button></span></span>
+  <button class="tbtn" type="button" data-labels-toggle aria-pressed="true">Labels: on</button>
+  <button class="tbtn" type="button" data-reduce-toggle aria-pressed="false">Reduced motion: off</button>
+</div>
+<div class="legend" aria-label="Message states">
+  <span><i class="dotc" style="background:var(--accent)"></i>request in flight</span>
+  <span><i class="dotc" style="background:var(--blue)"></i>queued (buffered)</span>
+  <span><i class="dotc" style="background:var(--violet)"></i>processing</span>
+  <span><i class="dotc" style="background:var(--ok)"></i>succeeded</span>
+  <span><i class="dotc" style="background:var(--warn)"></i>retry</span>
+  <span><i class="dotc" style="background:var(--pink)"></i>throttled (429)</span>
+  <span><i class="dotc" style="background:var(--bad)"></i>dead-lettered</span>
+</div>
+
+<div id="flow-stage">
+<figure class="whiteboard wb stage stage-wrap">
+<div class="scroll">
+<svg id="stage-1k" viewBox="0 0 1000 450" role="img" aria-label="Illustrative animation of the 1,000 TPS architecture: requests pass a rate-limited API Gateway, an ingress Lambda routes them into three queues, capped worker pools consume them at a controlled rate, downstream systems process at different speeds, failures retry and eventually dead-letter.">
+  <defs><marker id="s-mk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5a77a8"/></marker></defs>
+  <path class="wire" d="M90,220 L118,220" marker-end="url(#s-mk)"/>
+  <path class="wire" d="M220,220 L248,220" marker-end="url(#s-mk)"/>
+  <path class="wire async" d="M350,220 L370,220 L370,90 L398,90" marker-end="url(#s-mk)"/>
+  <path class="wire async" d="M370,220 L398,220" marker-end="url(#s-mk)"/>
+  <path class="wire async" d="M370,220 L370,350 L398,350" marker-end="url(#s-mk)"/>
+  <path class="wire" d="M170,244 L24,244" style="stroke:var(--pink);stroke-dasharray:4 5;opacity:.6"/>
+  <text x="105" y="275" text-anchor="middle" class="lbl" style="fill:var(--pink)">429 + Retry-After</text>
+  <path class="wire dlq" d="M760,116 L760,416 L602,416" style="opacity:.55"/>
+  <g class="snode"><rect x="10" y="190" width="80" height="60" rx="9"/><text x="50" y="216" text-anchor="middle" class="t1">Clients</text><text x="50" y="236" text-anchor="middle" class="t2">bursty</text></g>
+  <g class="snode"><rect x="120" y="190" width="100" height="60" rx="9"/><text x="170" y="216" text-anchor="middle" class="t1">API GW</text><text x="170" y="236" text-anchor="middle" class="t2">rate limit</text></g>
+  <g class="snode"><rect x="250" y="190" width="100" height="60" rx="9"/><text x="300" y="216" text-anchor="middle" class="t1">Ingress λ</text><text x="300" y="236" text-anchor="middle" class="t2">validate · enqueue</text></g>
+
+  <text x="400" y="60" class="lbl">Queue A · legacy core</text><text x="600" y="60" text-anchor="end" class="lbl-y" data-more="A"></text>
+  <path class="wire retryw" d="M922,78 L922,44 L560,44 L560,68"/>
+  <g class="snode q"><rect x="400" y="68" width="200" height="44" rx="8"/></g>
+  <text x="640" y="60" class="lbl">Workers A · max 2</text>
+  <g class="snode"><rect x="640" y="64" width="100" height="52" rx="8"/></g>
+  <text x="780" y="60" class="lbl">Legacy core · slow</text>
+  <g class="snode down"><rect x="780" y="64" width="130" height="52" rx="8"/></g>
+  <path class="wire async" d="M600,90 L638,90" marker-end="url(#s-mk)"/><path class="wire async" d="M740,90 L778,90" marker-end="url(#s-mk)"/><path class="wire" d="M910,90 L938,90" marker-end="url(#s-mk)"/>
+  <circle class="ring" cx="952" cy="90" r="13"/><text x="952" y="122" text-anchor="middle" class="t2">done</text>
+
+  <text x="400" y="190" class="lbl">Queue B · banking</text><text x="600" y="190" text-anchor="end" class="lbl-y" data-more="B"></text>
+  <path class="wire retryw" d="M922,208 L922,174 L560,174 L560,198"/>
+  <g class="snode q"><rect x="400" y="198" width="200" height="44" rx="8"/></g>
+  <text x="640" y="190" class="lbl">Workers B · max 3</text>
+  <g class="snode"><rect x="640" y="194" width="100" height="52" rx="8"/></g>
+  <text x="780" y="190" class="lbl">Corporate banking</text>
+  <g class="snode down"><rect x="780" y="194" width="130" height="52" rx="8"/></g>
+  <path class="wire async" d="M600,220 L638,220" marker-end="url(#s-mk)"/><path class="wire async" d="M740,220 L778,220" marker-end="url(#s-mk)"/><path class="wire" d="M910,220 L938,220" marker-end="url(#s-mk)"/>
+  <circle class="ring" cx="952" cy="220" r="13"/><text x="952" y="252" text-anchor="middle" class="t2">done</text>
+
+  <text x="400" y="320" class="lbl">Queue C · partner API</text><text x="600" y="320" text-anchor="end" class="lbl-y" data-more="C"></text>
+  <path class="wire retryw" d="M922,338 L922,304 L560,304 L560,328"/>
+  <g class="snode q"><rect x="400" y="328" width="200" height="44" rx="8"/></g>
+  <text x="640" y="320" class="lbl">Workers C · max 2</text>
+  <g class="snode"><rect x="640" y="324" width="100" height="52" rx="8"/></g>
+  <text x="780" y="320" class="lbl">Partner API · flaky</text>
+  <g class="snode down"><rect x="780" y="324" width="130" height="52" rx="8"/></g>
+  <path class="wire async" d="M600,350 L638,350" marker-end="url(#s-mk)"/><path class="wire async" d="M740,350 L778,350" marker-end="url(#s-mk)"/><path class="wire" d="M910,350 L938,350" marker-end="url(#s-mk)"/>
+  <circle class="ring" cx="952" cy="350" r="13"/><text x="952" y="382" text-anchor="middle" class="t2">done</text>
+
+  <text x="400" y="393" class="lbl-r">Dead-letter queue (after 3 attempts)</text>
+  <g class="snode bad"><rect x="400" y="398" width="200" height="36" rx="8"/></g>
+  <text x="980" y="440" text-anchor="end" class="lbl-y">amber path = retry after visibility timeout</text>
+  <g class="particles"></g>
+</svg>
+</div>
+</figure>
+<figure class="whiteboard wb stage stage-wrap" hidden>
+<div class="scroll">
+<svg id="stage-1m" viewBox="0 0 1000 450" role="img" aria-label="Illustrative animation of the sharded architecture: many transactions are routed to six shards that execute in parallel, about half send cross-shard receipts to another shard, and all results pass through consensus before being finalized.">
+  <defs><marker id="s2-mk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5a77a8"/></marker></defs>
+  <path class="wire" d="M90,220 L113,220" marker-end="url(#s2-mk)"/>
+  <path class="wire" d="M205,220 L228,220" marker-end="url(#s2-mk)"/>
+  <path class="wire" d="M320,220 L335,220"/>
+  <path class="wire" d="M335,24 L335,365"/><path class="wire" d="M335,24 L535,24 L535,365"/>
+  <path class="wire" d="M335,95 L348,95" marker-end="url(#s2-mk)"/><path class="wire" d="M335,230 L348,230" marker-end="url(#s2-mk)"/><path class="wire" d="M335,365 L348,365" marker-end="url(#s2-mk)"/>
+  <path class="wire" d="M535,95 L548,95" marker-end="url(#s2-mk)"/><path class="wire" d="M535,230 L548,230" marker-end="url(#s2-mk)"/><path class="wire" d="M535,365 L548,365" marker-end="url(#s2-mk)"/>
+  <path class="wire" d="M830,220 L868,220" marker-end="url(#s2-mk)"/>
+  <g class="snode"><rect x="10" y="190" width="80" height="60" rx="9"/><text x="50" y="216" text-anchor="middle" class="t1">Tx gen</text><text x="50" y="236" text-anchor="middle" class="t2">many sources</text></g>
+  <g class="snode"><rect x="115" y="190" width="90" height="60" rx="9"/><text x="160" y="216" text-anchor="middle" class="t1">Ingress</text><text x="160" y="236" text-anchor="middle" class="t2">RPC · peers</text></g>
+  <g class="snode"><rect x="230" y="190" width="90" height="60" rx="9"/><text x="275" y="216" text-anchor="middle" class="t1">Router</text><text x="275" y="236" text-anchor="middle" class="t2">by account</text></g>
+  <g class="snode"><rect x="350" y="40" width="170" height="100" rx="9"/><text x="360" y="58" class="t2">shard 1</text><circle class="cp" cx="400" cy="95" r="17"/><circle class="cp" cx="470" cy="95" r="17"/></g>
+  <g class="snode"><rect x="350" y="175" width="170" height="100" rx="9"/><text x="360" y="193" class="t2">shard 2</text><circle class="cp" cx="400" cy="230" r="17"/><circle class="cp" cx="470" cy="230" r="17"/></g>
+  <g class="snode"><rect x="350" y="310" width="170" height="100" rx="9"/><text x="360" y="328" class="t2">shard 3</text><circle class="cp" cx="400" cy="365" r="17"/><circle class="cp" cx="470" cy="365" r="17"/></g>
+  <g class="snode"><rect x="550" y="40" width="170" height="100" rx="9"/><text x="560" y="58" class="t2">shard 4</text><circle class="cp" cx="600" cy="95" r="17"/><circle class="cp" cx="670" cy="95" r="17"/></g>
+  <g class="snode"><rect x="550" y="175" width="170" height="100" rx="9"/><text x="560" y="193" class="t2">shard 5</text><circle class="cp" cx="600" cy="230" r="17"/><circle class="cp" cx="670" cy="230" r="17"/></g>
+  <g class="snode"><rect x="550" y="310" width="170" height="100" rx="9"/><text x="560" y="328" class="t2">shard 6</text><circle class="cp" cx="600" cy="365" r="17"/><circle class="cp" cx="670" cy="365" r="17"/></g>
+  <g class="snode"><rect x="760" y="40" width="70" height="370" rx="9"/><text x="795" y="225" text-anchor="middle" class="t1" transform="rotate(-90 795 225)">Consensus &amp; coordination</text></g>
+  <g class="snode"><rect x="870" y="190" width="110" height="60" rx="9"/><text x="925" y="216" text-anchor="middle" class="t1">Results</text><text x="925" y="236" text-anchor="middle" class="t2">finalized</text></g>
+  <text x="535" y="446" text-anchor="middle" class="lbl-v">small violet circles = cross-shard receipts executing on the receiver's shard</text>
+  <g class="particles"></g>
+</svg>
+</div>
+</figure>
+<div class="stats" id="stats-1k" aria-label="1K animation counters">
+  <div>Arrived<b data-stat="arrived">0</b></div>
+  <div>Accepted<b data-stat="accepted">0</b></div>
+  <div class="s-thr">Throttled (429)<b data-stat="throttled">0</b></div>
+  <div class="s-ok">Completed<b data-stat="completed">0</b></div>
+  <div class="s-retry">Retries<b data-stat="retries">0</b></div>
+  <div class="s-dlq">Dead-lettered<b data-stat="dlq">0</b></div>
+  <div>Queue A depth<b data-stat="qa">0</b></div>
+  <div>Queue B depth<b data-stat="qb">0</b></div>
+  <div>Queue C depth<b data-stat="qc">0</b></div>
+</div>
+<div class="stats" id="stats-1m" aria-label="1M animation counters" hidden>
+  <div>Submitted<b data-stat="submitted">0</b></div>
+  <div>Executing now<b data-stat="executing">0</b></div>
+  <div>Shards busy<b data-stat="busyShards">0</b></div>
+  <div class="s-retry">Cross-shard receipts<b data-stat="cross">0</b></div>
+  <div class="s-ok">Finalized<b data-stat="finalized">0</b></div>
+</div>
+</div>
+
+<div class="two" style="margin-top:1rem">
+  <div class="card" data-explain="1k"><h4>What you're seeing: 1K buffered architecture</h4>
+    <ul>
+      <li><b>Bursts</b> arrive faster than the API's rate limit, so some requests are <span style="color:var(--pink)">throttled with 429</span> at the edge: backpressure working as designed.</li>
+      <li>Accepted requests are <span style="color:var(--blue)">buffered</span> in one queue per downstream. Watch queue A grow during bursts and drain afterwards: the queue absorbs the burst, it doesn't speed anything up.</li>
+      <li>Each worker pool has a fixed cap (2, 3, 2), so the slow legacy core never sees more than 2 concurrent calls.</li>
+      <li>Partner failures <span style="color:var(--warn)">retry</span> after a visibility timeout. After 3 attempts the message is <span style="color:var(--bad)">dead-lettered</span> instead of blocking the lane.</li>
+      <li>Lane C's problems never slow lanes A and B: queue isolation and bulkheads.</li>
+    </ul></div>
+  <div class="card" data-explain="1m" hidden><h4>What you're seeing: 1M sharded architecture</h4>
+    <ul>
+      <li>A high, uniform stream of transactions is routed to the shard that owns each sender account.</li>
+      <li>All six shards <span style="color:var(--violet)">execute in parallel</span>, so throughput grows with the number of shards.</li>
+      <li>About half the transactions produce a <span style="color:var(--violet)">cross-shard receipt</span> that executes on the receiver's shard: the coordination cost of partitioning.</li>
+      <li>Results pass through consensus before being <span style="color:var(--ok)">finalized</span>.</li>
+      <li>Nothing here waits on an external legacy system, which is precisely why this model doesn't transfer to the enterprise case.</li>
+    </ul></div>
+  <div class="card"><h4>Why the difference matters</h4>
+    <p>The 1M design gets throughput by <em>adding parallel owners of state</em>. The 1K design gets <em>safe</em> throughput by <em>pacing work to fixed-capacity owners of state</em>. If you can't partition the system of record, more parallelism just moves the queue into the legacy system, where it shows up as timeouts.</p></div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="simulator" data-nav="D. Throughput simulator" data-keywords="simulator queue depth drain time utilization bottleneck little's law worker capacity">D. Interactive throughput simulator</h2>
+<div class="callout warn"><span class="title">Educational approximation</span>This is a deterministic, steady-state model with documented formulas. It is not a substitute for load testing, queueing analysis or service-specific capacity testing, and it does not calculate real AWS limits, costs or production performance.</div>
+<div class="filter-row"><span class="assume">Presets:</span>
+  <button class="tbtn" type="button" data-preset="healthy">Healthy headroom</button>
+  <button class="tbtn" type="button" data-preset="legacy">Legacy bottleneck (isolated)</button>
+  <button class="tbtn" type="button" data-preset="shared">Same load, shared queue</button>
+  <button class="tbtn" type="button" data-preset="sync">Same load, synchronous</button>
+  <button class="tbtn" type="button" data-preset="spike">3× spike + existing backlog</button>
+</div>
+
+<div class="sim" id="sim">
+  <form class="sim-inputs" onsubmit="return false" aria-label="Simulator inputs">
+    <fieldset>
+      <legend>Architecture</legend>
+      <div class="arch-choice">
+        <label><input type="radio" name="sim-arch" value="1"><span>1 · Direct synchronous<small>Every request waits for the downstream; no buffer</small></span></label>
+        <label><input type="radio" name="sim-arch" value="2"><span>2 · Async with buffering<small>One shared queue, shared workers, no per-downstream limits</small></span></label>
+        <label><input type="radio" name="sim-arch" value="3" checked><span>3 · Async + per-downstream worker limits<small>Queue per downstream, concurrency budget per system (recommended)</small></span></label>
+        <label><input type="radio" name="sim-arch" value="4"><span>4 · Parallelized downstream<small>Only where independent processing or partitioning is feasible</small></span></label>
+      </div>
+    </fieldset>
+    <fieldset id="partition-row" hidden>
+      <legend>Partitioning (option 4)</legend>
+      <div class="field"><label for="partitions">Parallel partitions</label><output data-out="partitions" data-unit="×"></output><input type="range" id="partitions" min="2" max="16" step="1" value="4"></div>
+      <div class="checks" role="group" aria-label="Systems that can be partitioned">
+        <label><input type="checkbox" id="part-a"> A legacy core</label>
+        <label><input type="checkbox" id="part-b" checked> B corporate banking</label>
+        <label><input type="checkbox" id="part-c"> C partner API</label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Traffic</legend>
+      <div class="field"><label for="in-tps">Incoming TPS (during burst)</label><output data-out="in-tps"></output><input type="range" id="in-tps" min="100" max="5000" step="50" value="1000"></div>
+      <div class="field"><label for="burst">Burst duration (s)</label><output data-out="burst" data-unit=" s"></output><input type="range" id="burst" min="1" max="300" step="1" value="60"></div>
+      <div class="field"><label for="after">Arrival rate after the burst (TPS)</label><output data-out="after"></output><input type="range" id="after" min="0" max="5000" step="50" value="300"></div>
+      <div class="field"><label for="q0">Starting queue depth (messages)</label><output data-out="q0"></output><input type="range" id="q0" min="0" max="100000" step="500" value="0"></div>
+    </fieldset>
+    <fieldset>
+      <legend>Downstream capacity (sustainable TPS)</legend>
+      <div class="field"><label for="cap-a">A · legacy core</label><output data-out="cap-a"></output><input type="range" id="cap-a" min="50" max="2000" step="10" value="300"></div>
+      <div class="field"><label for="cap-b">B · corporate banking</label><output data-out="cap-b"></output><input type="range" id="cap-b" min="50" max="2000" step="10" value="600"></div>
+      <div class="field"><label for="cap-c">C · partner API</label><output data-out="cap-c"></output><input type="range" id="cap-c" min="50" max="2000" step="10" value="200"></div>
+    </fieldset>
+    <fieldset>
+      <legend>Workers</legend>
+      <div class="field"><label for="conc">Worker concurrency</label><output data-out="conc"></output><input type="range" id="conc" min="1" max="500" step="1" value="250"></div>
+      <div class="field"><label for="ms">Avg processing time per transaction (ms)</label><output data-out="ms" data-unit=" ms"></output><input type="range" id="ms" min="10" max="2000" step="10" value="200"></div>
+    </fieldset>
+    <details>
+      <summary style="cursor:pointer;font-size:13.5px;color:var(--muted)">Advanced: workload shape, mix, timeout</summary>
+      <div style="margin-top:.6rem">
+        <div class="field"><label for="shape">Workload shape</label><select id="shape" style="grid-column:1/-1;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px"><option value="independent">Independent branches: each transaction calls one system</option><option value="serial">Serial chain: each transaction calls A, then B, then C</option></select></div>
+        <div class="field"><label for="mix-a">Traffic share to A</label><output data-out="mix-a" data-unit="%"></output><input type="range" id="mix-a" min="0" max="100" step="5" value="30"></div>
+        <div class="field"><label for="mix-b">Traffic share to B</label><output data-out="mix-b" data-unit="%"></output><input type="range" id="mix-b" min="0" max="100" step="5" value="40"></div>
+        <div class="field"><label for="mix-c">Traffic share to C</label><output data-out="mix-c" data-unit="%"></output><input type="range" id="mix-c" min="0" max="100" step="5" value="30"></div>
+        <div class="field"><label for="timeout">Sync bounded wait / timeout (s)</label><output data-out="timeout" data-unit=" s"></output><input type="range" id="timeout" min="1" max="30" step="1" value="5"></div>
+        <p class="assume">Shares are normalised if they don't add up to 100%.</p>
+      </div>
+    </details>
+  </form>
+
+  <div class="sim-outputs">
+    <div class="bottleneck ok" id="bottleneck" aria-live="polite"></div>
+    <div class="kpis">
+      <div class="kpi"><div class="k">Incoming TPS</div><div class="v" id="o-in">0</div><div class="n">arrival rate during the burst</div></div>
+      <div class="kpi"><div class="k">Accepted TPS</div><div class="v" id="o-acc">0</div><div class="n">durably accepted (or answered, if sync)</div></div>
+      <div class="kpi"><div class="k">Completed TPS</div><div class="v" id="o-done">0</div><div class="n">steady completion during the burst</div></div>
+      <div class="kpi"><div class="k">Timed out / rejected</div><div class="v" id="o-rej">0</div><div class="n">TPS (synchronous only)</div></div>
+      <div class="kpi"><div class="k">Backlog growth</div><div class="v" id="o-growth">0</div><div class="n">messages per second</div></div>
+      <div class="kpi"><div class="k">Queue depth</div><div class="v" id="o-q">0</div><div class="n">at the end of the burst</div></div>
+      <div class="kpi"><div class="k">Drain time</div><div class="v" id="o-drain">0</div><div class="n">after the burst ends</div></div>
+      <div class="kpi"><div class="k">Worker capacity</div><div class="v" id="o-w">0</div><div class="n">TPS = concurrency ÷ time</div></div>
+      <div class="kpi"><div class="k">In flight (Little's law)</div><div class="v" id="o-little">0</div><div class="n">concurrency needed for the incoming rate</div></div>
+    </div>
+    <div class="charts">
+      <div class="chart"><h5><span style="color:var(--accent)">━</span> incoming vs <span style="color:var(--ok)">━</span> completed (TPS)</h5><svg id="chart-rate" viewBox="0 0 360 190" role="img" aria-label="Line chart of incoming and completed transactions per second over time"></svg></div>
+      <div class="chart"><h5><span style="color:var(--violet)">■</span> queue depth (messages)</h5><svg id="chart-queue" viewBox="0 0 360 190" role="img" aria-label="Area chart of queue depth over time"></svg></div>
+      <div class="chart"><h5>downstream utilization (offered load ÷ capacity)</h5><svg id="chart-util" viewBox="0 0 360 190" role="img" aria-label="Bar chart of utilization per downstream system"></svg></div>
+    </div>
+  </div>
+</div>
+
+<details class="card" style="margin-bottom:1rem">
+<summary style="cursor:pointer;font-weight:700">Model and assumptions (read before quoting any number)</summary>
+<div style="margin-top:.8rem">
+<p class="assume">Notation: λ = incoming TPS during the burst, λ₂ = arrival rate after it, T = burst duration, t = average processing time (s), N = worker concurrency, Dᵢ = sustainable capacity of downstream i, mᵢ = traffic share of branch i.</p>
+<div class="formula">Worker capacity (TPS)           W   = N / t
+Concurrency in flight            L   = λ × t                       (Little's law)
+Branch arrival rate              aᵢ  = λ × mᵢ
+Serial chain capacity            C   = min(W, D_A, D_B, D_C)        (every stage is required)
+Independent branches             Cᵢ  computed separately per branch  (never multiplied into one chain)
+Queue growth rate                g   = max(0, accepted − completed)
+Queue depth after the burst      Qᵢ  = max(0, Q₀·mᵢ + (aᵢ − Cᵢ) × T)
+Drain time after the burst       Qᵢ / (Cᵢ − λ₂·mᵢ)                   (∞ if Cᵢ ≤ λ₂·mᵢ)</div>
+<ul class="assume">
+<li><b>1 · Synchronous:</b> each branch completes min(aᵢ, Dᵢ). Excess requests wait up to the timeout before failing, holding concurrency: demand = Σ completedᵢ·t + Σ excessᵢ·timeout. If demand exceeds N, every branch is scaled by N ÷ demand. This is how one slow system starves healthy ones in a shared synchronous pool. Accepted = completed; nothing is buffered.</li>
+<li><b>2 · Async, shared queue and workers:</b> work advances in mix proportion, so capacity C = min(W, minᵢ Dᵢ ÷ mᵢ) (head-of-line blocking). Without per-downstream limits, workers offer W × mᵢ to each system while a backlog exists; above 100% that means errors and retries.</li>
+<li><b>3 · Per-downstream limits:</b> concurrency is budgeted per system, demand first: baseᵢ = min(Dᵢ, aᵢ) × t (shared in proportion if N is too small). Any spare concurrency goes to systems that can use it to drain backlog, up to Dᵢ × t. Then Wᵢ = budgetᵢ ÷ t and Cᵢ = min(Dᵢ, Wᵢ). Offered load never exceeds Dᵢ.</li>
+<li><b>4 · Parallelized:</b> as option 3, with Dᵢ multiplied by the partition count only for systems you mark as partitionable.</li>
+<li>Rates are steady-state averages: no warm-up, cold starts, latency distributions, retries' extra load, or service quotas. Accepting faster than you complete assumes your buffer, message retention and API acceptance contract (202) allow it.</li>
+<li>Charts integrate the same rates over time (240 steps); the time axis is capped at one hour after the burst.</li>
+</ul></div>
+</details>
+
+<!-- ============================================================ -->
+<h2 id="protect" data-nav="E. Protecting downstream systems" data-keywords="backpressure rate limiting concurrency isolation batching idempotency DLQ circuit breaker bulkhead caching partitioning autoscaling reconciliation">E. Protecting non-scalable downstream systems</h2>
+<p>Getting to 1,000 TPS safely means making every layer respect the capacity of the slowest system it depends on. These fourteen controls work together. Open a card for where it belongs, when it helps, its limitations, and its effect on latency, throughput and reliability.</p>
+<div class="callout exam"><span class="title">Exactly-once is an application property, not a broker feature</span>SQS Standard delivers <em>at least once</em>. FIFO deduplication only removes duplicate <em>messages</em> sent within its deduplication window. Lambda retries, timeouts and partial batch failures can still invoke your code more than once. <strong>Exactly-once business effects</strong> (one debit per payment) require application-level idempotency keys, conditional writes or transactions, and reconciliation for ambiguous outcomes. No message broker guarantees them on its own.</div>
+<div class="filter-row" id="pattern-filter" role="group" aria-label="Filter patterns">
+  <span class="assume">Show:</span>
+  <span class="seg"><button type="button" data-filter="all" aria-pressed="true">All 14</button><button type="button" data-filter="overload" aria-pressed="false">Overload</button><button type="button" data-filter="failure" aria-pressed="false">Failure isolation</button><button type="button" data-filter="correctness" aria-pressed="false">Correctness</button><button type="button" data-filter="scale" aria-pressed="false">Scale</button></span>
+  <button class="tbtn" type="button" data-expand="open">Expand all</button><button class="tbtn" type="button" data-expand="close">Collapse all</button>
+</div>
+<div class="patterns">
+<details class="pattern" data-tags="overload"><summary><span class="no">1</span><span class="ttl">Backpressure<small>Stop upstream systems from generating unlimited work</small></span></summary><div class="body"><dl>
+<dt>Problem it solves</dt><dd>Producers can create work faster than it can be completed, which leads to unbounded queues, rising latency and eventually failure.</dd>
+<dt>Where it belongs</dt><dd>At the API edge (429/503 with <code>Retry-After</code>), in the ingress Lambda (refuse new work when queue age exceeds the acceptance SLA), and between internal stages.</dd>
+<dt>When it is useful</dt><dd>Whenever acceptance can outrun completion, which is always true for buffered designs.</dd>
+<dt>Limitations</dt><dd>It moves the problem to callers, who must honour <code>Retry-After</code> with backoff and jitter. It needs a reliable saturation signal (queue age is better than depth).</dd>
+<dt>Effect</dt><dd><div class="effects"><span class="eff up">Latency: protects p99 of accepted work</span><span class="eff mix">Throughput: deliberately caps acceptance</span><span class="eff up">Reliability: ↑ prevents collapse</span></div></dd></dl></div></details>
+
+<details class="pattern" data-tags="overload"><summary><span class="no">2</span><span class="ttl">Rate limiting<small>Enforce sustainable rates globally and per downstream</small></span></summary><div class="body"><dl>
+<dt>Problem it solves</dt><dd>Demand above what a system can sustain, and noisy clients consuming a shared budget.</dd>
+<dt>Where it belongs</dt><dd>API Gateway throttling and usage plans (per client and route); a token bucket in each downstream adapter (per system).</dd>
+<dt>When it is useful</dt><dd>Always for legacy and partner systems with known or contracted capacity.</dd>
+<dt>Limitations</dt><dd>Per-instance limiters multiply as workers scale out, so you need a shared limiter or a concurrency cap. Static limits drift from real capacity, so revisit them after every capacity test.</dd>
+<dt>Effect</dt><dd><div class="effects"><span class="eff down">Latency: ↑ for queued work</span><span class="eff mix">Throughput: capped at the safe rate</span><span class="eff up">Reliability: ↑</span></div></dd></dl></div></details>
+
+<details class="pattern" data-tags="overload"><summary><span class="no">3</span><span class="ttl">Concurrency limits<small>Control simultaneous calls into legacy systems</small></span></summary><div class="body"><dl>
+<dt>Problem it solves</dt><dd>Too many parallel calls exhaust connection pools, sessions or threads in the legacy system.</dd>
+<dt>Where it belongs</dt><dd>The SQS event source mapping's maximum concurrency per queue, Lambda reserved concurrency, and adapter connection pools.</dd>
+<dt>When it is useful</dt><dd>For systems with fixed connection limits. It is self-correcting: if the system slows down, rate = concurrency ÷ latency falls automatically.</dd>
+<dt>Limitations</dt><dd>Concurrency isn't rate. Set it too low and you waste capacity; too high and it doesn't protect anything. Size it from Little's law and measured latency.</dd>
+<dt>Effect</dt><dd><div class="effects"><span class="eff up">Latency: more stable</span><span class="eff mix">Throughput: bounded by design</span><span class="eff up">Reliability: ↑</span></div></dd></dl></div></details>
+
+<details class="pattern" data-tags="failure"><summary><span class="no">4</span><span class="ttl">Queue isolation<small>Stop one slow system from blocking unrelated work</small></span></summary><div class="body"><dl>
+<dt>Problem it solves</dt><dd>Head-of-line blocking: with one shared queue, messages for a slow or failing system occupy workers and delay everything else.</dd>
+<dt>Where it belongs</dt><dd>One queue (and DLQ) per downstream or per transaction class, routed by the ingress or EventBridge rules.</dd>
+<dt>When it is useful</dt><dd>Mixed workloads with different capacities, SLAs or failure rates. Compare options 2 and 3 in the simulator.</dd>
+<dt>Limitations</dt><dd>More queues to operate and monitor; no ordering guarantees across queues; routing logic must stay correct.</dd>
+<dt>Effect</dt><dd><div class="effects"><span class="eff up">Latency: ↓ for healthy lanes</span><span class="eff up">Throughput: ↑ healthy lanes unaffected</span><span class="eff up">Reliability: ↑ failures contained</span></div></dd></dl></div></details>
+
+<details class="pattern" data-tags="scale"><summary><span class="no">5</span><span class="ttl">Batching<small>Reduce per-transaction overhead where the backend supports it</small></span></summary><div class="body"><dl>
+<dt>Problem it solves</dt><dd>Per-call overhead (connection, authentication, commit) dominates, so the system spends its capacity on ceremony.</dd>
+<dt>Where it belongs</dt><dd>SQS batch receive (batch size and batching window), plus an adapter that aggregates items into the backend's bulk API.</dd>
+<dt>When it is useful</dt><dd>Only when the backend genuinely supports bulk operations and the latency budget allows a short wait.</dd>
+<dt>Limitations</dt><dd>Partial failures are complex (use <code>ReportBatchItemFailures</code>). The batching window adds latency, and a failed call affects many transactions.</dd>
+<dt>Effect</dt><dd><div class="effects"><span class="eff down">Latency: ↑ by the batch window</span><span class="eff up">Throughput: ↑ often substantially</span><span class="eff mix">Reliability: mixed</span></div></dd></dl></div></details>
+
+<details class="pattern" data-tags="correctness"><summary><span class="no">6</span><span class="ttl">Idempotency<small>Prevent duplicate business operations during retries</small></span></summary><div class="body"><dl>
+<dt>Problem it solves</dt><dd>At-least-once delivery, client retries and Lambda retries can otherwise post the same payment twice.</dd>
+<dt>Where it belongs</dt><dd>The API (<code>Idempotency-Key</code> header); ingress (conditional write of the key); the worker before the downstream call; and the downstream itself when it accepts an idempotency reference.</dd>
+<dt>When it is useful</dt><dd>Always, for every state-changing operation.</dd>
+<dt>Limitations</dt><dd>Needs a durable key store with a TTL and a defined answer for "same key, different payload". It can't make a non-idempotent downstream safe on its own, so you also need reconciliation.</dd>
+<dt>Effect</dt><dd><div class="effects"><span class="eff down">Latency: + one conditional write</span><span class="eff mix">Throughput: neutral</span><span class="eff up">Reliability: ↑↑ correctness</span></div></dd></dl></div></details>
+
+<details class="pattern" data-tags="failure"><summary><span class="no">7</span><span class="ttl">Dead-letter queues<small>Isolate repeatedly failing messages</small></span></summary><div class="body"><dl>
+<dt>Problem it solves</dt><dd>Poison messages retry forever, wasting worker and downstream capacity and hiding real failures.</dd>
+<dt>Where it belongs</dt><dd>A redrive policy on every SQS queue (<code>maxReceiveCount</code>); on-failure destinations for async Lambda invocations.</dd>
+<dt>When it is useful</dt><dd>Always for asynchronous processing.</dd>
+<dt>Limitations</dt><dd>A DLQ is a parking lot, not a fix. It needs alarms, triage runbooks and a redrive process. Dead-lettering breaks ordering, and messages still expire at the retention limit.</dd>
+<dt>Effect</dt><dd><div class="effects"><span class="eff up">Throughput: ↑ stops wasted work</span><span class="eff up">Reliability: ↑</span><span class="eff down">Latency: ↑ for the failed items</span></div></dd></dl></div></details>
+
+<details class="pattern" data-tags="failure"><summary><span class="no">8</span><span class="ttl">Timeouts &amp; circuit breakers<small>Prevent cascading failures</small></span></summary><div class="body"><dl>
+<dt>Problem it solves</dt><dd>A slow dependency ties up callers until everything upstream also slows down or fails.</dd>
+<dt>Where it belongs</dt><dd>In every adapter call. Keep timeouts nested: downstream call &lt; Lambda timeout &lt; queue visibility timeout. Use one circuit breaker per downstream.</dd>
+<dt>When it is useful</dt><dd>On every remote call, and especially on synchronous paths.</dd>
+<dt>Limitations</dt><dd>A timeout after the request was sent leaves the outcome <em>unknown</em> (it may have committed), so you need reconciliation. Breaker thresholds need tuning, and breaker state is per instance unless you share it.</dd>
+<dt>Effect</dt><dd><div class="effects"><span class="eff up">Latency: bounded</span><span class="eff up">Throughput: protected</span><span class="eff up">Reliability: ↑</span></div></dd></dl></div></details>
+
+<details class="pattern" data-tags="failure"><summary><span class="no">9</span><span class="ttl">Bulkheads<small>Separate resources and concurrency budgets by dependency</small></span></summary><div class="body"><dl>
+<dt>Problem it solves</dt><dd>One dependency consumes a shared pool (concurrency, connections, threads), starving everything else. The synchronous model in the simulator shows this.</dd>
+<dt>Where it belongs</dt><dd>Separate functions or event source mappings with their own concurrency, separate connection pools, separate API keys and quotas, and separate sync and async capacity.</dd>
+<dt>When it is useful</dt><dd>When there are several dependencies with different reliability, and whenever sync and async traffic share infrastructure.</dd>
+<dt>Limitations</dt><dd>Reserved capacity can sit idle, and there is more configuration to maintain.</dd>
+<dt>Effect</dt><dd><div class="effects"><span class="eff up">Reliability: ↑</span><span class="eff up">Throughput: ↑ for healthy paths</span><span class="eff mix">Cost: some idle headroom</span></div></dd></dl></div></details>
+
+<details class="pattern" data-tags="scale"><summary><span class="no">10</span><span class="ttl">Caching<small>Only where data freshness and business semantics allow</small></span></summary><div class="body"><dl>
+<dt>Problem it solves</dt><dd>Repeated reads of slowly changing reference data load the legacy system for no benefit.</dd>
+<dt>Where it belongs</dt><dd>In the adapter or API layer (in-memory, ElastiCache, DAX, or API Gateway caching for safe GETs).</dd>
+<dt>When it is useful</dt><dd>Read-heavy reference data (product catalogues, static entitlements) with an agreed staleness.</dd>
+<dt>Limitations</dt><dd>Staleness, invalidation and stampedes. Never cache balances, limits or authorization decisions unless the business explicitly accepts stale answers.</dd>
+<dt>Effect</dt><dd><div class="effects"><span class="eff up">Latency: ↓</span><span class="eff up">Throughput: ↑ for reads</span><span class="eff mix">Reliability: mixed (stale data risk)</span></div></dd></dl></div></details>
+
+<details class="pattern" data-tags="scale correctness"><summary><span class="no">11</span><span class="ttl">Partitioning<small>By customer, account, transaction type or another valid key</small></span></summary><div class="body"><dl>
+<dt>Problem it solves</dt><dd>A single serial stream or a single resource limits throughput while ordering must still be preserved.</dd>
+<dt>Where it belongs</dt><dd>FIFO message group IDs per account or customer, separate queues per key range, and downstream instances that genuinely own disjoint data.</dd>
+<dt>When it is useful</dt><dd>When ordering matters only per key and the downstream can process keys independently (option 4 in the simulator).</dd>
+<dt>Limitations</dt><dd>Hot keys and cross-partition transactions remain a problem. Partitioning does <em>not</em> raise the capacity of a single legacy database behind all partitions.</dd>
+<dt>Effect</dt><dd><div class="effects"><span class="eff up">Throughput: ↑ parallel keys</span><span class="eff up">Ordering: per key</span><span class="eff mix">Latency: ↓ except hot keys</span></div></dd></dl></div></details>
+
+<details class="pattern" data-tags="scale overload"><summary><span class="no">12</span><span class="ttl">Autoscaling<small>Scale workers on demand and queue age, within downstream limits</small></span></summary><div class="body"><dl>
+<dt>Problem it solves</dt><dd>Fixed worker counts either waste money or fall behind during peaks.</dd>
+<dt>Where it belongs</dt><dd>Lambda scales with the queue via the event source mapping; container consumers scale on backlog per task or age of the oldest message.</dd>
+<dt>When it is useful</dt><dd>When demand varies, provided the scaling is <strong>capped</strong> by each downstream's concurrency budget.</dd>
+<dt>Limitations</dt><dd>Scaling consumers past downstream capacity only adds errors and retries. There is also scaling lag and cold starts to account for.</dd>
+<dt>Effect</dt><dd><div class="effects"><span class="eff up">Throughput: ↑ up to the cap</span><span class="eff up">Cost: efficient</span><span class="eff up">Reliability: ↑ only when capped</span></div></dd></dl></div></details>
+
+<details class="pattern" data-tags="correctness"><summary><span class="no">13</span><span class="ttl">Durable transaction state<small>Accepted, processing, succeeded, failed, reconciliation-required</small></span></summary><div class="body"><dl>
+<dt>Problem it solves</dt><dd>Neither clients nor operators can tell what happened to a transaction, and blind retries create duplicates.</dd>
+<dt>Where it belongs</dt><dd>A status store keyed by correlation ID, written at ingress and on every transition with conditional updates (no regressions from a late retry).</dd>
+<dt>When it is useful</dt><dd>For all asynchronous processing, auditability and customer support.</dd>
+<dt>Limitations</dt><dd>Extra writes per transaction, retention and PII governance, and the store itself needs capacity planning.</dd>
+<dt>Effect</dt><dd><div class="effects"><span class="eff down">Latency: + small</span><span class="eff mix">Throughput: neutral</span><span class="eff up">Reliability: ↑↑ traceability</span></div></dd></dl></div></details>
+
+<details class="pattern" data-tags="correctness failure"><summary><span class="no">14</span><span class="ttl">Reconciliation<small>Recover from ambiguous outcomes</small></span></summary><div class="body"><dl>
+<dt>Problem it solves</dt><dd>A timeout after sending: the downstream may have succeeded even though you never got the response.</dd>
+<dt>Where it belongs</dt><dd>A scheduled or event-driven job that queries the downstream by business reference (or compares statements) and resolves <code>RECONCILIATION_REQUIRED</code> to succeeded or failed.</dd>
+<dt>When it is useful</dt><dd>For any non-idempotent downstream, and always for money movement.</dd>
+<dt>Limitations</dt><dd>Requires a way to query outcomes (an API, reports or statements). Resolution is delayed, and a human process is needed for the leftovers.</dd>
+<dt>Effect</dt><dd><div class="effects"><span class="eff up">Correctness: ↑↑</span><span class="eff down">Latency: ↑ for ambiguous cases</span><span class="eff mix">Throughput: neutral</span></div></dd></dl></div></details>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="queue" data-nav="F. Queue & worker design" data-keywords="SQS visibility timeout maxReceiveCount DLQ redrive event source mapping maximum concurrency reserved concurrency standard FIFO status store state machine">F. Queue and worker design</h2>
+<figure class="whiteboard wb">
+<div class="scroll">
+<svg viewBox="0 0 1100 280" role="img" aria-label="Detailed flow: API Gateway to ingress Lambda to a durable SQS queue to a worker pool with capped concurrency to a downstream adapter that enforces rate limits, timeouts and a circuit breaker, to the legacy system. Messages that fail repeatedly move to a dead-letter queue and can be redriven after a fix. The ingress writes ACCEPTED to the transaction status store, workers write processing outcomes, and a reconciliation job queries the legacy system to resolve unknown outcomes.">
+  <defs>
+    <marker id="f-mk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2b88b8"/></marker>
+    <marker id="f-mkr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f87171"/></marker>
+    <marker id="f-mky" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#fbbf24"/></marker>
+    <marker id="f-mks" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3f7f8f"/></marker>
+  </defs>
+  <path class="wire async" d="M150,82 L178,82" marker-end="url(#f-mk)"/>
+  <path class="wire async" d="M310,82 L338,82" marker-end="url(#f-mk)"/>
+  <path class="wire async" d="M480,82 L508,82" marker-end="url(#f-mk)"/>
+  <path class="wire async" d="M660,82 L688,82" marker-end="url(#f-mk)"/>
+  <path class="wire async" d="M860,82 L888,82" marker-end="url(#f-mk)"/>
+  <path class="wire dlq" d="M410,114 L410,198" marker-end="url(#f-mkr)"/><text x="418" y="185" class="lbl-r">N failed receives</text>
+  <path class="wire retryw" d="M340,236 L322,236 L322,102 L338,102" marker-end="url(#f-mky)"/><text x="316" y="222" text-anchor="end" class="lbl-y">redrive after fix</text>
+  <path class="wire status" d="M245,114 L245,150 L560,150 L560,198" marker-end="url(#f-mks)"/><text x="552" y="142" text-anchor="end" class="lbl">write ACCEPTED</text>
+  <path class="wire status" d="M585,114 L585,198" marker-end="url(#f-mks)"/><text x="593" y="168" class="lbl">PROCESSING / SUCCEEDED / FAILED</text>
+  <path class="wire status" d="M890,230 L862,230" marker-end="url(#f-mks)"/>
+  <path class="wire status" d="M980,198 L980,116" marker-end="url(#f-mks)"/><text x="988" y="162" class="lbl">query outcome</text>
+  <path class="flow c" d="M150,82 L888,82"/>
+  <g class="snode"><rect x="20" y="50" width="130" height="64" rx="10"/><text x="85" y="77" text-anchor="middle" class="t1">API Gateway</text><text x="85" y="97" text-anchor="middle" class="t2">throttle per client</text></g>
+  <g class="snode"><rect x="180" y="50" width="130" height="64" rx="10"/><text x="245" y="77" text-anchor="middle" class="t1">Ingress Lambda</text><text x="245" y="97" text-anchor="middle" class="t2">validate · enqueue</text></g>
+  <g class="snode q"><rect x="340" y="50" width="140" height="64" rx="10"/><text x="410" y="77" text-anchor="middle" class="t1">Amazon SQS</text><text x="410" y="97" text-anchor="middle" class="t2">durable buffer</text></g>
+  <g class="snode"><rect x="510" y="50" width="150" height="64" rx="10"/><text x="585" y="77" text-anchor="middle" class="t1">Worker pool</text><text x="585" y="97" text-anchor="middle" class="t2">capped concurrency</text></g>
+  <g class="snode"><rect x="690" y="50" width="170" height="64" rx="10"/><text x="775" y="77" text-anchor="middle" class="t1">Downstream adapter</text><text x="775" y="97" text-anchor="middle" class="t2">limit · timeout · breaker</text></g>
+  <g class="snode down"><rect x="890" y="50" width="180" height="64" rx="10"/><text x="980" y="77" text-anchor="middle" class="t1">Legacy system</text><text x="980" y="97" text-anchor="middle" class="t2">fixed sustainable capacity</text></g>
+  <g class="snode bad"><rect x="340" y="200" width="140" height="60" rx="10"/><text x="410" y="226" text-anchor="middle" class="t1">Dead-letter queue</text><text x="410" y="246" text-anchor="middle" class="t2">alarm · triage · redrive</text></g>
+  <g class="snode st"><rect x="510" y="200" width="350" height="60" rx="10"/><text x="685" y="226" text-anchor="middle" class="t1">Transaction status store</text><text x="685" y="246" text-anchor="middle" class="t2">keyed by correlation ID · conditional transitions</text></g>
+  <g class="snode"><rect x="890" y="200" width="180" height="60" rx="10"/><text x="980" y="226" text-anchor="middle" class="t1">Reconciliation job</text><text x="980" y="246" text-anchor="middle" class="t2">resolves unknown outcomes</text></g>
+</svg>
+</div>
+<figcaption>The full async path with its failure and recovery paths. Every arrow into the status store is a conditional write, so a late retry can never move a transaction backwards.</figcaption>
+</figure>
+
+<h3>Settings that make or break this design</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Setting</th><th>Guidance</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Visibility timeout</td><td>≥ 6× the consumer Lambda timeout (AWS guidance for SQS event sources)</td><td>Otherwise a message reappears while it's still being processed, causing duplicate work</td></tr>
+<tr><td>Timeout nesting</td><td>downstream call &lt; Lambda timeout &lt; visibility timeout</td><td>Each layer must give up before the layer above assumes failure</td></tr>
+<tr><td><code>maxReceiveCount</code></td><td>Typically 3–5, with the DLQ alarmed at &gt; 0 messages</td><td>Bounded retries; poison messages leave the main flow</td></tr>
+<tr><td>Event source mapping maximum concurrency</td><td>Per queue ≈ downstream sustainable TPS × average call time</td><td>This is the knob that protects each legacy system</td></tr>
+<tr><td>Partial batch responses</td><td>Enable <code>ReportBatchItemFailures</code></td><td>Only failed items are retried, not the whole batch</td></tr>
+<tr><td>Batch size / window</td><td>Small for latency-sensitive work; larger only with real bulk benefit</td><td>Batching trades latency for throughput</td></tr>
+<tr><td>Message retention</td><td>Longer than your worst realistic backlog + incident recovery time</td><td>A backlog that outlives retention silently loses accepted work</td></tr>
+<tr><td>Reserved concurrency</td><td>Reserve for sync and async functions separately</td><td>Keeps the regional concurrency pool from becoming a shared single point of failure</td></tr>
+</tbody></table></div>
+
+<h3>The differences that matter</h3>
+<div class="two">
+  <div class="card"><h4>Accepted ≠ processed ≠ completed</h4>
+    <p><b>Accepted</b>: durably recorded and queued (HTTP 202). <b>Processed</b>: a worker attempted it. <b>Completed</b>: the downstream confirmed the business effect. Report all three. Ingress dashboards that show only "accepted" hide a growing backlog.</p></div>
+  <div class="card"><h4>Retries happen at three layers</h4>
+    <p>Clients retry, the SDK retries, and SQS redelivers. Uncoordinated, they multiply load during an incident. Pick one owner for business retries (the queue), cap the others, and make every layer idempotent.</p></div>
+  <div class="card"><h4>Reserved concurrency vs maximum concurrency</h4>
+    <p><b>Lambda reserved concurrency</b> guarantees <em>and</em> caps a function's share of the regional pool. <b>Event source mapping maximum concurrency</b> caps how many concurrent invocations one SQS queue drives, so you can protect a downstream without throttling the function itself.</p></div>
+</div>
+<div class="table-wrap"><table>
+<thead><tr><th></th><th>SQS Standard</th><th>SQS FIFO</th></tr></thead>
+<tbody>
+<tr><td>Delivery</td><td>At least once; occasional duplicates</td><td>Deduplicated within the deduplication window (still make consumers idempotent)</td></tr>
+<tr><td>Ordering</td><td>Best effort</td><td>Strict within a message group (e.g. per account)</td></tr>
+<tr><td>Throughput</td><td>Very high</td><td>Lower per queue; batching and high-throughput mode raise it (check current quotas)</td></tr>
+<tr><td>Failure impact</td><td>One bad message doesn't block others</td><td>A failing message blocks its message group until it succeeds or is dead-lettered</td></tr>
+<tr><td>Choose when</td><td>Order doesn't matter, or can be restored downstream</td><td>Per-key ordering is a business requirement (e.g. sequential postings on one account)</td></tr>
+</tbody></table></div>
+
+<h3>Transaction status state machine</h3>
+<figure class="whiteboard wb">
+<div class="scroll">
+<svg viewBox="0 0 1000 200" role="img" aria-label="State machine: ACCEPTED moves to PROCESSING. PROCESSING retries with backoff, and moves to SUCCEEDED, to FAILED, or, on a timeout with unknown outcome, to RECONCILIATION REQUIRED. Reconciliation resolves to SUCCEEDED if the downstream confirms the posting, or FAILED if it confirms nothing was posted.">
+  <defs><marker id="z-mk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5a77a8"/></marker></defs>
+  <path class="wire" d="M170,100 L228,100" marker-end="url(#z-mk)"/>
+  <path class="wire" d="M390,90 L430,90 L430,45 L468,45" marker-end="url(#z-mk)"/>
+  <path class="wire" d="M390,110 L430,110 L430,155 L468,155" marker-end="url(#z-mk)"/>
+  <path class="wire" d="M390,100 L698,100" marker-end="url(#z-mk)"/><text x="545" y="93" text-anchor="middle" class="lbl-y">timeout: outcome unknown</text>
+  <path class="wire" d="M840,80 L840,45 L622,45" marker-end="url(#z-mk)"/><text x="730" y="37" text-anchor="middle" class="lbl-g">confirmed posted</text>
+  <path class="wire" d="M840,120 L840,155 L622,155" marker-end="url(#z-mk)"/><text x="730" y="175" text-anchor="middle" class="lbl-r">confirmed not posted</text>
+  <path class="wire" d="M285,80 C 285,48 345,48 345,80" marker-end="url(#z-mk)"/><text x="315" y="42" text-anchor="middle" class="lbl-y">retry with backoff</text>
+  <g class="snode"><rect x="20" y="80" width="150" height="40" rx="8"/><text x="95" y="105" text-anchor="middle" class="t1" style="font-size:13px">ACCEPTED</text></g>
+  <g class="snode"><rect x="230" y="80" width="160" height="40" rx="8"/><text x="310" y="105" text-anchor="middle" class="t1" style="font-size:13px">PROCESSING</text></g>
+  <g class="snode okn"><rect x="470" y="25" width="150" height="40" rx="8"/><text x="545" y="50" text-anchor="middle" class="t1" style="font-size:13px">SUCCEEDED</text></g>
+  <g class="snode bad"><rect x="470" y="135" width="150" height="40" rx="8"/><text x="545" y="160" text-anchor="middle" class="t1" style="font-size:13px">FAILED</text></g>
+  <text x="545" y="193" text-anchor="middle" class="t2">non-retryable, or retries exhausted → DLQ</text>
+  <g class="snode st"><rect x="700" y="80" width="280" height="40" rx="8"/><text x="840" y="105" text-anchor="middle" class="t1" style="font-size:13px">RECONCILIATION_REQUIRED</text></g>
+</svg>
+</div>
+<figcaption>Clients see these states through the status API. Only reconciliation may move a transaction out of RECONCILIATION_REQUIRED.</figcaption>
+</figure>
+
+<!-- ============================================================ -->
+<h2 id="contracts" data-nav="G. Sync vs async API contracts" data-keywords="202 accepted correlation id status endpoint callback synchronous timeout 429 503 retry-after">G. Synchronous vs asynchronous API contracts</h2>
+<p>Not every transaction can be asynchronous. A real-time authorisation, a balance check before a trade, or an instant-payment confirmation needs a definitive answer now, and it stays synchronous unless the business contract changes. Everything else should default to async.</p>
+<div class="two">
+<div>
+<h4>Asynchronous: accept, then complete</h4>
+<div class="http"><span class="m">POST</span> /v1/payments
+Idempotency-Key: 7f3c9a2e-1b4d-4e88-9c1a-52d0e6a1b9f4
+{ "debtor": "ACC-1001", "amount": "2500.00", "currency": "EUR" }
+
+<span class="s2">HTTP/1.1 202 Accepted</span>
+Location: /v1/payments/txn_01HZX4Q8
+{ "correlationId": "txn_01HZX4Q8", "status": "ACCEPTED" }
+
+<span class="m">GET</span> /v1/payments/txn_01HZX4Q8
+<span class="s2">HTTP/1.1 200 OK</span>
+{ "status": "SUCCEEDED", "completedAt": "2026-10-12T09:41:07Z" }</div>
+<p class="assume">202 means "durably recorded and queued", nothing more. Repeating the POST with the same key returns the same correlation ID instead of creating a second payment.</p>
+</div>
+<div>
+<h4>Synchronous: bounded wait, explicit overload</h4>
+<div class="http"><span class="m">POST</span> /v1/authorisations
+Idempotency-Key: 0b5e…  (client timeout: 3 s)
+
+<span class="s2">HTTP/1.1 200 OK</span>          <span class="c">← answered within the bound</span>
+<span class="s4">HTTP/1.1 429 Too Many Requests</span>
+Retry-After: 2                <span class="c">← over quota: shed early, cheaply</span>
+<span class="s5">HTTP/1.1 503 Service Unavailable</span>
+Retry-After: 5                <span class="c">← breaker open / downstream saturated</span>
+<span class="s5">HTTP/1.1 504 Gateway Timeout</span>  <span class="c">← outcome UNKNOWN: reconcile, don't blindly retry</span></div>
+<p class="assume">Fail fast with 429/503 rather than letting requests queue until they time out. A 504 after the request was sent is an ambiguous outcome: retry only with the same idempotency key, and reconcile.</p>
+</div>
+</div>
+<div class="table-wrap"><table>
+<thead><tr><th>Question</th><th>If yes</th></tr></thead>
+<tbody>
+<tr><td>Does the caller need the business outcome before it can continue (and can't proceed on "accepted")?</td><td>Synchronous, with a bounded wait and reserved capacity</td></tr>
+<tr><td>Can the business accept "we have it, the result follows within N seconds"?</td><td>Asynchronous: 202 + status endpoint or callback</td></tr>
+<tr><td>Is the downstream occasionally slower than the caller's timeout?</td><td>Prefer async; if it must stay sync, add a circuit breaker and reconciliation</td></tr>
+<tr><td>Is the operation a bulk or batch submission?</td><td>Asynchronous, almost always</td></tr>
+</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="observe" data-nav="H. Observability & validation" data-keywords="cloudwatch metrics alarms queue age slo load test capacity test">H. Observability and capacity validation</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Question</th><th>Signal (CloudWatch metric or custom)</th><th>Alarm idea</th></tr></thead>
+<tbody>
+<tr><td>Are we accepting what arrives?</td><td>API Gateway <code>Count</code>, <code>4XXError</code> (429s), <code>5XXError</code>, <code>Latency</code></td><td>429 rate above the agreed shed level; 5XX &gt; 0.5%</td></tr>
+<tr><td>Are we completing what we accept?</td><td>Accepted vs completed per minute (custom, from the status store or EMF)</td><td>Completed &lt; accepted for N consecutive minutes</td></tr>
+<tr><td>How far behind are we?</td><td>SQS <code>ApproximateAgeOfOldestMessage</code>, <code>ApproximateNumberOfMessagesVisible</code></td><td>Oldest message age &gt; completion SLA (age beats depth)</td></tr>
+<tr><td>Are workers saturated or throttled?</td><td>Lambda <code>ConcurrentExecutions</code>, <code>Throttles</code>, <code>Duration</code>, <code>Errors</code></td><td>Throttles &gt; 0 on sync functions; duration approaching timeout</td></tr>
+<tr><td>Is a downstream struggling?</td><td>Per-adapter latency p50/p99, error rate, breaker state (custom)</td><td>p99 latency &gt; budget; breaker open</td></tr>
+<tr><td>Are we losing or parking work?</td><td>DLQ <code>ApproximateNumberOfMessagesVisible</code>, RECONCILIATION_REQUIRED count</td><td>Any message in a DLQ; reconciliation backlog growing</td></tr>
+</tbody></table></div>
+<h3>How to actually prove 1,000 TPS</h3>
+<ol class="steps">
+  <li><div><b>Measure each downstream alone</b><span>Find each system's sustainable TPS and latency curve, and the point where latency turns non-linear, in a production-like environment, with the owners' agreement.</span></div></li>
+  <li><div><b>Set budgets from measurements</b><span>Per-downstream rate limits and concurrency = measured sustainable capacity minus safety headroom (e.g. 20–30%).</span></div></li>
+  <li><div><b>Check AWS quotas</b><span>Regional Lambda concurrency, API Gateway throttles, and SQS/FIFO throughput for your exact configuration. Request increases before the test, not during it.</span></div></li>
+  <li><div><b>Load test end to end</b><span>Ramp to 1,000 TPS with a realistic transaction mix, then hold it long enough to see steady state, then run bursts above it.</span></div></li>
+  <li><div><b>Test the failure modes</b><span>Slow one downstream, fail another, and confirm isolation, DLQ behaviour, alarms and reconciliation.</span></div></li>
+  <li><div><b>Record the result as a measured number</b><span>Only now does "1,000 TPS" stop being a design target.</span></div></li>
+</ol>
+
+<!-- ============================================================ -->
+<h2 id="recommend" data-nav="I. Recommendation" data-keywords="recommendation roadmap decision">I. Recommendation and roadmap</h2>
+<div class="principle">Keep the existing API Gateway + Lambda platform. Reach 1,000 TPS by <b>buffering asynchronous work, pacing each downstream to its measured capacity, protecting the synchronous path, and making every transaction idempotent and traceable</b>. Reserve sharding-style redesigns for workloads you own end to end and that genuinely need far more than a few thousand TPS.</div>
+<div class="table-wrap decision"><table>
+<thead><tr><th>If you observe…</th><th>Do this first</th><th>Not this</th></tr></thead>
+<tbody>
+<tr><td>Ingress 429s while downstreams are idle</td><td>Raise API Gateway and Lambda limits; check quotas</td><td>Add queues (the bottleneck is elsewhere)</td></tr>
+<tr><td>Queue age keeps growing</td><td>Find the binding downstream; isolate it; batch or partition if it supports that</td><td>Add more workers to a saturated legacy system</td></tr>
+<tr><td>Timeouts on the sync path</td><td>Bounded waits, breaker, 429/503 shedding, reserved concurrency, reconciliation</td><td>Longer timeouts</td></tr>
+<tr><td>Duplicate business effects</td><td>Idempotency keys end to end + conditional status writes</td><td>Switching to FIFO and assuming the problem is solved</td></tr>
+<tr><td>One partner outage slows everything</td><td>Queue per downstream + bulkheads + DLQ</td><td>A bigger shared worker pool</td></tr>
+</tbody></table></div>
+<ol class="steps">
+  <li><div><b>Phase 1 · Make it observable (weeks 1–2)</b><span>Accepted vs completed, queue age, per-downstream latency and errors. Baseline each downstream's sustainable capacity.</span></div></li>
+  <li><div><b>Phase 2 · Make it safe (weeks 2–6)</b><span>Idempotency keys, status store, per-downstream queues + DLQs, worker concurrency caps, adapter rate limits, timeouts and breakers.</span></div></li>
+  <li><div><b>Phase 3 · Make it async where allowed (weeks 4–10)</b><span>Introduce 202 + status/callback for operations whose contract allows it; keep a protected sync path for the rest.</span></div></li>
+  <li><div><b>Phase 4 · Raise the ceiling (ongoing)</b><span>Batching, caching of reference data, partitioning where the downstream supports it, and capacity work with system owners. Re-run the load test after each change.</span></div></li>
+</ol>
+
+<!-- ============================================================ -->
+<h2 id="quiz" data-nav="Self-check quiz">Self-check quiz</h2>
+<p class="quiz-score">Score: 0 / 0 answered</p>
+<div class="quiz" data-answer="c">
+  <div class="q">1 · The legacy core sustains 300 TPS. You add an SQS queue in front of it and accept 1,000 TPS of core-bound traffic for an hour. What happens?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. The core now processes 1,000 TPS because the queue smooths the load</button>
+    <button class="opt" data-k="b">B. Nothing; queues provide unlimited capacity</button>
+    <button class="opt" data-k="c">C. The backlog grows by about 700 messages per second; the queue absorbs the burst but completion stays at ~300 TPS</button>
+    <button class="opt" data-k="d">D. SQS automatically rate-limits the producers</button>
+  </div>
+  <div class="why"><b>C.</b> A queue absorbs bursts; it doesn't create processing capacity. Sustained arrivals above capacity just grow the backlog (about 2.5 million messages after an hour).</div>
+</div>
+<div class="quiz" data-answer="b">
+  <div class="q">2 · Which control most directly prevents a slow partner API from delaying legacy-core transactions?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. A larger shared worker pool</button>
+    <button class="opt" data-k="b">B. Separate queues and concurrency budgets per downstream (queue isolation + bulkheads)</button>
+    <button class="opt" data-k="c">C. Switching to SQS FIFO</button>
+    <button class="opt" data-k="d">D. Longer Lambda timeouts</button>
+  </div>
+  <div class="why"><b>B.</b> Isolation stops head-of-line blocking and resource starvation. Compare simulator options 2 and 3 at the same load.</div>
+</div>
+<div class="quiz" data-answer="d">
+  <div class="q">3 · With 250 concurrent workers and 200 ms average processing time, what is the worker capacity?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. 50 TPS</button>
+    <button class="opt" data-k="b">B. 250 TPS</button>
+    <button class="opt" data-k="c">C. 5,000 TPS</button>
+    <button class="opt" data-k="d">D. 1,250 TPS</button>
+  </div>
+  <div class="why"><b>D.</b> Capacity = concurrency ÷ time = 250 ÷ 0.2 s = 1,250 TPS. Whether that is usable still depends on each downstream's capacity.</div>
+</div>
+<div class="quiz" data-answer="a">
+  <div class="q">4 · A worker times out calling the core after sending a payment. What is the correct handling?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Mark it RECONCILIATION_REQUIRED and resolve the outcome by querying the core; any retry reuses the same idempotency key</button>
+    <button class="opt" data-k="b">B. Retry immediately with a new request ID</button>
+    <button class="opt" data-k="c">C. Mark it FAILED and tell the client to resubmit</button>
+    <button class="opt" data-k="d">D. Mark it SUCCEEDED; timeouts usually succeed</button>
+  </div>
+  <div class="why"><b>A.</b> A timeout after sending is an ambiguous outcome. Guessing either way risks a duplicate payment or a lost one.</div>
+</div>
+<div class="quiz" data-answer="c">
+  <div class="q">5 · Does SQS FIFO give you exactly-once business effects?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Yes, FIFO guarantees exactly-once execution of your code</button>
+    <button class="opt" data-k="b">B. Yes, if the batch size is 1</button>
+    <button class="opt" data-k="c">C. No. FIFO deduplicates messages within a window, but your code can still run more than once; you need idempotency and reconciliation</button>
+    <button class="opt" data-k="d">D. No, FIFO delivers at most once</button>
+  </div>
+  <div class="why"><b>C.</b> Exactly-once business effects are an application property built on idempotency keys, conditional writes and reconciliation.</div>
+</div>
+<div class="quiz" data-answer="b">
+  <div class="q">6 · Why isn't the NEAR 1M TPS benchmark a template for an enterprise API that calls legacy banking systems?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Because Google Cloud can't run banking workloads</button>
+    <button class="opt" data-k="b">B. Its throughput comes from partitioning state the platform owns across many shards (simple native transfers); enterprise throughput is bound by systems of record you usually can't shard</button>
+    <button class="opt" data-k="c">C. Because 70 shards is too few</button>
+    <button class="opt" data-k="d">D. Because blockchains can't use queues</button>
+  </div>
+  <div class="why"><b>B.</b> Different constraint, different solution: sharding helps when you own partitionable state; pacing and protection help when the bottleneck is downstream.</div>
+</div>
+
+<nav class="pager">
+  <a href="programmable-money.html">← Programmable Money</a>
+  <a href="../index.html">Home →</a>
+</nav>
+<footer class="site">CCA Study Hub · personal study notes · not an official Anthropic, AWS or NEAR resource · illustrative architecture, not professional advice</footer>
+
+</article>
+</main>
+<script src="../assets/site.js"></script>
+<script src="../assets/tps.js"></script>
+</body>
+</html>
