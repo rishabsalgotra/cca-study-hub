@@ -1,0 +1,735 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Programmable Money</title>
+<meta name="description" content="What programmable money is, its two bank-grade variants (tokenized deposits and stablecoins), how to build it, animated diagrams, tested smart contracts, use cases, and why it matters for banks.">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-root=".." data-topic="programmable-money">
+<main>
+<article class="content">
+
+<div class="eyebrow">Topic 3 · Fintech</div>
+<h1>Programmable money: tokenized deposits &amp; stablecoins</h1>
+<p class="lede">Programmable money is money that carries its own rules. Instead of a person or a back-office batch job deciding when a payment happens, code on a shared ledger releases, holds, splits, or returns funds automatically when agreed conditions are met. This page explains the idea from first principles, compares the two variants banks actually use (<strong>tokenized deposits</strong> and <strong>stablecoins</strong>), shows how to build them, and walks through tested smart contracts for real use cases.</p>
+<div class="meta-row">
+  <span class="pill"><b>2</b> variants compared</span>
+  <span class="pill"><b>7</b> tested smart contracts</span>
+  <span class="pill"><b>10</b> use cases</span>
+  <span class="pill">≈ 60–75 min read</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="what" data-nav="1. What is programmable money?" data-keywords="definition smart contract token ledger conditional">1. What is programmable money?</h2>
+<p>Today, money in a bank account is a <strong>number in a database</strong> that only the bank can change. To make a payment "smart" (pay when goods arrive, sweep excess cash at 5 p.m., release salary every second), you need extra systems around the money: escrow agents, letters of credit, batch jobs, reconciliations, and people checking documents.</p>
+<p><strong>Programmable money</strong> moves that logic <em>next to</em> the money. Money becomes a <strong>digital token</strong> on a shared ledger, and <strong>smart contracts</strong> (small programs on that same ledger) can hold and move tokens according to rules that every party can read and nobody can quietly change.</p>
+
+<div class="callout"><span class="title">One-sentence definition</span>Programmable money = <strong>trusted digital money</strong> (a token that is a claim on a bank or a regulated issuer) + <strong>a shared ledger</strong> (one source of truth) + <strong>code that controls when and where it moves</strong>.</div>
+
+<h3>The four building blocks</h3>
+<div class="grid">
+  <div class="card"><h4>💵 Money token</h4><p>A digital representation of a currency claim: a <em>tokenized deposit</em> (a bank liability) or a <em>stablecoin</em> (a liability of a regulated issuer backed by reserves).</p></div>
+  <div class="card"><h4>📒 Shared ledger</h4><p>A blockchain or other distributed ledger where balances and contract state live. Every participant sees the same state, so there is nothing to reconcile.</p></div>
+  <div class="card"><h4>⚙️ Smart contract</h4><p>Code deployed on the ledger. It can own tokens and moves them only when its rules say so: escrow, delivery-versus-payment, sweeps, streams.</p></div>
+  <div class="card"><h4>🔌 Oracles &amp; identity</h4><p>Oracles bring real-world facts on-chain (shipment delivered, price, weather). Identity and KYC layers decide who may hold or receive the money.</p></div>
+</div>
+
+<h3>Programmable <em>money</em> vs programmable <em>payments</em></h3>
+<p>These terms get mixed up. The distinction matters to central banks and regulators:</p>
+<div class="table-wrap"><table>
+<thead><tr><th></th><th>Programmable payments</th><th>Programmable money</th></tr></thead>
+<tbody>
+<tr><td>Where the logic lives</td><td><strong>Outside</strong> the money, in a contract or service that decides when to move otherwise ordinary tokens</td><td><strong>Inside</strong> the token itself (e.g. a coin that can only be spent at pharmacies, or that expires)</td></tr>
+<tr><td>Is the money still "money"?</td><td>Yes. Once paid out, the token is fully fungible</td><td>Restricted. One dollar is no longer equal to another dollar</td></tr>
+<tr><td>Regulator view</td><td>Generally favoured; preserves the <strong>singleness of money</strong></td><td>Used carefully, only for specific purposes</td></tr>
+<tr><td>Example on this page</td><td><code>TradeEscrow</code>, <code>DvPSettlement</code>, <code>TreasurySweep</code></td><td><code>PurposeBoundGrant</code> (purpose-bound money: the restriction sits in a wrapper, not in the base token)</td></tr>
+</tbody></table></div>
+<div class="callout tip"><span class="title">💡 Design rule of thumb</span>Keep the base money token simple and fungible. Put business rules in <em>separate</em> contracts that hold the token. That way one dollar is always one dollar, and rules can change without re-issuing money. Every contract on this page follows this pattern.</div>
+
+<h3>What it lets you do that today's rails can't</h3>
+<ul>
+<li><strong>Conditional settlement:</strong> pay only if X happened (delivery, approval, milestone).</li>
+<li><strong>Atomic settlement:</strong> two legs (bond ↔ cash, USD ↔ EUR) move together or not at all. That removes counterparty settlement risk (Herstatt risk).</li>
+<li><strong>24/7/365, near-instant finality:</strong> no cut-off times, weekends, or batch windows.</li>
+<li><strong>Automation without middleware:</strong> sweeps, splits, streams, and payouts run on the ledger itself.</li>
+<li><strong>Composability:</strong> the same cash token plugs into escrow, DvP, lending, and payroll contracts. Once built, these are reusable Lego bricks.</li>
+<li><strong>Built-in audit trail:</strong> every state change is time-stamped, signed, and shared.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="variants" data-nav="2. Two variants compared" data-keywords="tokenized deposits stablecoin comparison difference CBDC">2. Two variants: tokenized deposits vs stablecoins</h2>
+<p>Both put dollars (or euros, pounds, rupees…) on a programmable ledger. They differ in <strong>who owes you the money</strong>, <strong>where it can travel</strong>, and <strong>how it's regulated</strong>.</p>
+
+<div class="grid">
+  <div class="card"><h4>🏦 Variant 1 · Tokenized deposits</h4>
+    <p>A normal bank deposit, recorded as a token. It's still the bank's liability, still on its balance sheet, and still (usually) covered by deposit insurance. Typically lives on a <strong>permissioned</strong> ledger where only KYC'd customers can hold it.</p>
+    <p class="pill">e.g. J.P. Morgan Kinexys · Citi Token Services · HSBC Tokenised Deposit Service</p></div>
+  <div class="card"><h4>🪙 Variant 2 · Stablecoins</h4>
+    <p>A token issued by a regulated issuer and backed 1:1 by reserves (cash, short-term government bills). It's a claim on the <strong>issuer</strong>, not on a bank. It usually lives on <strong>public</strong> blockchains, so anyone with a wallet can hold it.</p>
+    <p class="pill">e.g. USDC · USDT · PYUSD · EURC · SG-Forge EURCV</p></div>
+</div>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Dimension</th><th>Tokenized deposit</th><th>Stablecoin (fiat-backed)</th></tr></thead>
+<tbody>
+<tr><td>Legal claim</td><td>On the <strong>bank</strong> (a deposit)</td><td>On the <strong>issuer</strong>, backed by segregated reserves</td></tr>
+<tr><td>Balance sheet</td><td>Stays on the bank's balance sheet; the bank can keep lending against it (fractional reserve)</td><td>Reserves are held 100% outside the lending book (cash / T-bills)</td></tr>
+<tr><td>Deposit insurance</td><td>Usually yes, as for any deposit (check your jurisdiction)</td><td>No; protection comes from reserve rules and redemption rights</td></tr>
+<tr><td>Interest</td><td>Can pay interest like any deposit</td><td>Regulated payment stablecoins generally can't pay interest to holders (e.g. US GENIUS Act)</td></tr>
+<tr><td>Typical ledger</td><td>Permissioned DLT run by a bank or consortium (increasingly also public L2s)</td><td>Public chains (Ethereum and its L2s, Solana, etc.)</td></tr>
+<tr><td>Who can hold it</td><td>Only onboarded (KYC'd) clients of participating banks</td><td>Anyone with a wallet, unless the address is blocklisted</td></tr>
+<tr><td>Cross-bank payments</td><td>Need an interbank settlement step (central bank money or a shared ledger)</td><td>The same token moves anywhere; no interbank step</td></tr>
+<tr><td>Main regulation</td><td>Banking law, capital and liquidity rules</td><td>Stablecoin regimes: EU MiCA, US GENIUS Act, HK, Singapore MAS, etc.</td></tr>
+<tr><td>Best at</td><td>Wholesale and corporate banking, treasury, securities settlement, intraday liquidity</td><td>Global reach, crypto/DeFi markets, cross-border retail and SME payments, machine payments</td></tr>
+<tr><td>Main risk</td><td>Fragmentation (each bank's token is a separate island) and bank credit risk</td><td>Run/de-peg risk if reserves are doubted; AML on open networks</td></tr>
+</tbody></table></div>
+<div class="callout exam"><span class="title">🎯 The key insight</span>Both variants can run <strong>exactly the same smart contracts</strong> (escrow, DvP, sweeps), because both look like a standard ERC-20 token to the contract. What changes is <em>who is allowed to participate</em> and <em>how money moves between institutions</em>. Section 9 shows each use case built both ways.</div>
+
+<!-- ============================================================ -->
+<h2 id="how" data-nav="3. How it works (animated)" data-keywords="flow animation condition oracle release">3. How it works: the core loop</h2>
+<p>Every programmable-money use case is a variation of one loop: <strong>lock → check condition → release (or refund)</strong>. Watch a $50,000 trade payment:</p>
+
+<figure class="diagram">
+<svg class="anim" data-still="4.2" viewBox="0 0 760 275" role="img" aria-label="Animated: a coin leaves the buyer's wallet and is locked in a smart contract. An oracle reports the shipment delivered, the contract's light turns from red to green, and the coin moves on to the seller's wallet.">
+  <defs><marker id="pm1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker></defs>
+  <path class="line" d="M180,115 L288,115" marker-end="url(#pm1)"/>
+  <path class="line" d="M490,115 L598,115" marker-end="url(#pm1)"/>
+  <path class="line dash" d="M390,226 L390,203" marker-end="url(#pm1)"/>
+
+  <rect class="box" x="20" y="80" width="160" height="70" rx="10"/>
+  <text x="100" y="108" text-anchor="middle" font-size="14" font-weight="600">Buyer's wallet</text>
+  <text x="100" y="130" text-anchor="middle" class="lbl">$50,000 in tokens</text>
+
+  <rect class="box-accent" x="290" y="30" width="200" height="170" rx="12"/>
+  <text x="380" y="56" text-anchor="middle" font-size="14" font-weight="700">Smart contract</text>
+  <text x="390" y="80" text-anchor="middle" class="lbl">IF goods delivered</text>
+  <text x="390" y="157" text-anchor="middle" class="lbl">AND before deadline</text>
+  <text x="390" y="177" text-anchor="middle" class="lbl">THEN pay seller · ELSE refund</text>
+  <circle cx="468" cy="51" r="7" class="light-red"><animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.5;0.52;0.97;1" dur="7s" repeatCount="indefinite"/></circle>
+  <circle cx="468" cy="51" r="7" class="light-green" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.5;0.52;0.97;1" dur="7s" repeatCount="indefinite"/></circle>
+
+  <rect class="box-ok" x="600" y="80" width="140" height="70" rx="10"/>
+  <text x="670" y="108" text-anchor="middle" font-size="14" font-weight="600">Seller's wallet</text>
+  <text x="670" y="130" text-anchor="middle" class="lbl">paid automatically</text>
+
+  <rect class="box-info" x="290" y="228" width="200" height="38" rx="8"/>
+  <text x="390" y="252" text-anchor="middle" font-size="13">Oracle: "shipment delivered"</text>
+
+  <text x="234" y="104" text-anchor="middle" class="lbl-accent">① lock</text>
+  <text x="544" y="104" text-anchor="middle" class="lbl-ok">③ release</text>
+  <text x="400" y="218" class="lbl-accent">② condition met</text>
+
+  <circle r="5" class="light-green" opacity="0">
+    <animateMotion dur="7s" repeatCount="indefinite" calcMode="linear" path="M390,226 L390,200" keyPoints="0;0;1;1" keyTimes="0;0.38;0.5;1"/>
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.37;0.38;0.5;0.51;1" dur="7s" repeatCount="indefinite"/>
+  </circle>
+  <g>
+    <circle r="13" class="coin"/><text y="4" text-anchor="middle" class="coin-text">$</text>
+    <animateMotion dur="7s" repeatCount="indefinite" calcMode="linear" path="M180,115 L390,115 L600,115" keyPoints="0;0;0.5;0.5;1;1" keyTimes="0;0.08;0.3;0.55;0.8;1"/>
+  </g>
+</svg>
+<figcaption>Funds are locked in the contract, so the seller knows the money exists and the buyer knows it can't be released early. A data feed (oracle) proves delivery, and the contract pays without anyone pressing a button.</figcaption>
+</figure>
+
+<ol class="steps">
+  <li><div><b>Tokenize</b><span>Fiat becomes a token: a bank mints deposit tokens against an account debit, or an issuer mints stablecoins against reserves.</span></div></li>
+  <li><div><b>Lock (commit)</b><span>The payer moves tokens into a smart contract. Now the funds are provably there but can't be spent by anyone outside the rules.</span></div></li>
+  <li><div><b>Observe</b><span>The contract gets facts: signatures from parties, an oracle's data, time passing, or another token arriving (DvP).</span></div></li>
+  <li><div><b>Execute</b><span>When the rule is satisfied, the contract moves tokens. Settlement and payment are the same event.</span></div></li>
+  <li><div><b>Fall back</b><span>Every rule needs an exit: deadline → refund, dispute → arbiter, incident → pause. Contracts without an exit trap money.</span></div></li>
+  <li><div><b>De-tokenize</b><span>The recipient keeps the tokens for the next payment, or redeems them into a normal bank balance.</span></div></li>
+</ol>
+
+<!-- ============================================================ -->
+<h2 id="deposits" data-nav="4. Variant 1: tokenized deposits" data-keywords="deposit token bank omnibus mint burn interbank central bank Kinexys Citi HSBC Agora">4. Variant 1: tokenized deposits</h2>
+<p>A tokenized deposit is <strong>the same deposit you already have, in a new format</strong>. When a client tokenizes $100, the bank debits the client's normal account and credits a special <strong>omnibus account</strong>. It then mints 100.00 tokens to the client's wallet on the ledger. Legally nothing changes: the bank still owes the client $100.</p>
+
+<figure class="diagram">
+<svg class="anim" data-still="4.0" viewBox="0 0 760 385" role="img" aria-label="Animated: Alice's deposit at Bank A is minted as an aUSD token, paid across the shared ledger to Bob at Bank B where it becomes bUSD, while Bank A pays Bank B in central bank reserves; Bob then redeems it into his Bank B account.">
+  <defs><marker id="pm2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker></defs>
+  <rect class="zone" x="20" y="20" width="720" height="130" rx="12"/>
+  <text x="36" y="40" class="lbl-accent">SHARED PERMISSIONED LEDGER</text>
+
+  <path class="line" d="M155,185 L155,133" marker-end="url(#pm2)"/>
+  <path class="line" d="M250,95 L508,95" marker-end="url(#pm2)"/>
+  <path class="line" d="M605,130 L605,183" marker-end="url(#pm2)"/>
+  <path class="line" d="M155,255 L155,335 L228,335"/>
+  <path class="line" d="M605,255 L605,335 L532,335"/>
+
+  <rect class="box-accent" x="60" y="50" width="190" height="80" rx="10"/>
+  <text x="155" y="70" text-anchor="middle" font-size="14" font-weight="600">Alice's wallet</text>
+  <text x="155" y="122" text-anchor="middle" class="lbl">aUSD = Bank A deposit</text>
+
+  <rect class="box-ok" x="510" y="50" width="190" height="80" rx="10"/>
+  <text x="605" y="70" text-anchor="middle" font-size="14" font-weight="600">Bob's wallet</text>
+  <text x="605" y="122" text-anchor="middle" class="lbl">bUSD = Bank B deposit</text>
+
+  <rect class="box" x="55" y="185" width="200" height="70" rx="10"/>
+  <text x="155" y="213" text-anchor="middle" font-size="14" font-weight="600">Bank A core banking</text>
+  <text x="155" y="237" text-anchor="middle" class="lbl">Alice −$100 · omnibus +$100</text>
+
+  <rect class="box" x="505" y="185" width="200" height="70" rx="10"/>
+  <text x="605" y="213" text-anchor="middle" font-size="14" font-weight="600">Bank B core banking</text>
+  <text x="605" y="237" text-anchor="middle" class="lbl">omnibus −$100 · Bob +$100</text>
+
+  <rect class="box-info" x="230" y="295" width="300" height="80" rx="10"/>
+  <text x="380" y="317" text-anchor="middle" font-size="13.5" font-weight="600">Central bank reserves / wholesale CBDC</text>
+  <text x="380" y="366" text-anchor="middle" class="lbl">③ Bank A pays Bank B $100 (interbank leg)</text>
+
+  <text x="165" y="163" class="lbl-accent">① mint</text>
+  <text x="380" y="84" text-anchor="middle" class="lbl-accent">② pay $100 · 24/7 · seconds</text>
+  <text x="595" y="163" text-anchor="end" class="lbl-ok">④ redeem</text>
+
+  <g opacity="0">
+    <circle r="11" class="coin-info"/><text y="4" text-anchor="middle" class="coin-text">R</text>
+    <animateMotion dur="9s" repeatCount="indefinite" calcMode="linear" path="M232,340 L528,340" keyPoints="0;0;1;1" keyTimes="0;0.3;0.55;1"/>
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.29;0.3;0.55;0.57;1" dur="9s" repeatCount="indefinite"/>
+  </g>
+  <g>
+    <circle r="13" class="coin"><animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.41;0.42;0.99;1" dur="9s" repeatCount="indefinite"/></circle>
+    <circle r="13" class="coin-ok" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.41;0.42;0.99;1" dur="9s" repeatCount="indefinite"/></circle>
+    <text y="4" text-anchor="middle" class="coin-text">$</text>
+    <animateMotion dur="9s" repeatCount="indefinite" calcMode="linear" path="M155,185 L155,95 L605,95 L605,185" keyPoints="0;0;0.143;0.143;0.857;0.857;1;1" keyTimes="0;0.05;0.18;0.28;0.55;0.65;0.8;1"/>
+    <animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.04;0.8;0.82;1" dur="9s" repeatCount="indefinite"/>
+  </g>
+</svg>
+<figcaption>Orange coin = Bank A's token (aUSD). It turns green (Bank B's bUSD) as it crosses banks, while the blue "R" coin settles the same amount between the two banks in central bank money. On unified-ledger designs (e.g. BIS Project Agorá) legs ② and ③ happen atomically.</figcaption>
+</figure>
+
+<h3>Lifecycle, step by step</h3>
+<ol class="steps">
+  <li><div><b>Onboard</b><span>The client is already KYC'd. The bank registers the client's wallet address on the ledger's allowlist. The wallet is often bank-custodied, with keys in an HSM or MPC.</span></div></li>
+  <li><div><b>Mint</b><span>Core banking debits the client's DDA and credits the omnibus account. The token service calls <code>mint(wallet, amount, coreRef)</code>. Invariant: <em>token supply = omnibus balance</em>.</span></div></li>
+  <li><div><b>Transfer &amp; program</b><span>Tokens move peer-to-peer or into contracts (escrow, DvP, sweeps) in seconds, 24/7.</span></div></li>
+  <li><div><b>Cross-bank</b><span>If the payee banks elsewhere, the payer's bank token is burned (or held) and the payee's bank mints its own. The banks settle in central bank money, or both banks' tokens live on one shared ledger (Partior, Agorá, RLN-style designs).</span></div></li>
+  <li><div><b>Redeem</b><span>The holder calls <code>redeem()</code>, the token is burned, and core banking credits the client's normal account.</span></div></li>
+</ol>
+
+<h3>Real-world examples (public announcements, as of 2025)</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Initiative</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>J.P. Morgan Kinexys</strong> (formerly Onyx / JPM Coin)</td><td>Deposit-token payments between J.P. Morgan institutional clients, 24/7, with programmable features. Reported daily volumes are in the billions. In 2025 it piloted <strong>JPMD</strong>, a USD deposit token on Base, a public Ethereum layer-2.</td></tr>
+<tr><td><strong>Citi Token Services</strong></td><td>Tokenized deposits for Citi's institutional clients: 24/7 cross-border liquidity and automated trade-finance flows.</td></tr>
+<tr><td><strong>HSBC Tokenised Deposit Service</strong></td><td>Tokenized deposits for corporate clients (UK, then Hong Kong) for instant 24/7 transfers between client accounts.</td></tr>
+<tr><td><strong>Project Agorá</strong> (BIS + 7 central banks + 40+ private firms)</td><td>Explores tokenized commercial bank deposits and wholesale central bank money on one programmable "unified ledger" for cross-border payments.</td></tr>
+<tr><td><strong>Partior</strong></td><td>A shared ledger built by banks (J.P. Morgan, DBS, Standard Chartered and others) for real-time, multi-currency interbank settlement.</td></tr>
+</tbody></table></div>
+
+<h3>Sample contract: <code>TokenizedDeposit.sol</code></h3>
+<p>A permissioned ERC-20 with the controls a bank needs: issuer-only minting tied to a core-banking reference, a KYC allowlist, account freezes, and an emergency pause. Every mint, burn, and transfer passes through one hook (<code>_update</code>), so the rules can't be bypassed.</p>
+<pre><code>{{code:contracts/TokenizedDeposit.sol}}</code></pre>
+<div class="callout warn"><span class="title">⚠️ Gotcha</span>Smart contracts are addresses too. To use a deposit token in an escrow or DvP contract, the bank must <strong>allowlist that contract</strong>. In practice banks maintain an approved-contract registry and only allowlist audited templates.</div>
+
+<!-- ============================================================ -->
+<h2 id="stablecoins" data-nav="5. Variant 2: stablecoins" data-keywords="stablecoin issuer reserve redeem mint public blockchain USDC USDT GENIUS MiCA">5. Variant 2: stablecoins</h2>
+<p>A fiat-backed stablecoin is a token whose issuer promises to redeem it <strong>1:1 for fiat</strong> and holds <strong>reserves</strong> (cash at banks and short-dated government bills) to back that promise. Because it lives on <strong>public blockchains</strong>, the same token can reach any wallet, exchange, or app worldwide without the issuer being involved in each transfer.</p>
+
+<figure class="diagram">
+<svg class="anim" data-still="5.3" viewBox="0 0 760 310" role="img" aria-label="Animated: a corporate wires dollars to the stablecoin issuer, which places them in reserves and mints xUSD to the corporate's wallet on a public blockchain; the token moves through exchanges to a supplier wallet, which then redeems it with the issuer and the token is burned.">
+  <defs><marker id="pm3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker></defs>
+  <rect class="zone" x="20" y="20" width="720" height="140" rx="12"/>
+  <text x="36" y="40" class="lbl-accent">PUBLIC BLOCKCHAIN · ANYONE WITH A WALLET</text>
+
+  <path class="line" d="M240,92 L283,92" marker-end="url(#pm3)"/>
+  <path class="line" d="M475,92 L518,92" marker-end="url(#pm3)"/>
+  <path class="line" d="M380,225 L380,185 L145,185 L145,132" marker-end="url(#pm3)"/>
+  <path class="line" d="M615,130 L615,185 L420,185 L420,223" marker-end="url(#pm3)"/>
+  <path class="line" d="M220,260 L283,260" marker-end="url(#pm3)"/>
+  <path class="line" d="M477,260 L538,260" marker-end="url(#pm3)"/>
+
+  <rect class="box-accent" x="50" y="50" width="190" height="80" rx="10"/>
+  <text x="145" y="70" text-anchor="middle" font-size="14" font-weight="600">Corporate wallet</text>
+  <text x="145" y="122" text-anchor="middle" class="lbl">holds xUSD</text>
+  <rect class="box" x="285" y="50" width="190" height="80" rx="10"/>
+  <text x="380" y="70" text-anchor="middle" font-size="14" font-weight="600">Exchanges / DeFi</text>
+  <text x="380" y="122" text-anchor="middle" class="lbl">liquidity, FX, other chains</text>
+  <rect class="box-ok" x="520" y="50" width="190" height="80" rx="10"/>
+  <text x="615" y="70" text-anchor="middle" font-size="14" font-weight="600">Supplier wallet</text>
+  <text x="615" y="122" text-anchor="middle" class="lbl">any country, any time</text>
+  <text x="380" y="150" text-anchor="middle" class="lbl-accent">④ transfer peer-to-peer, 24/7</text>
+
+  <rect class="box" x="30" y="225" width="190" height="70" rx="10"/>
+  <text x="125" y="253" text-anchor="middle" font-size="14" font-weight="600">Corporate's bank</text>
+  <text x="125" y="277" text-anchor="middle" class="lbl">wires USD</text>
+  <rect class="box-accent" x="285" y="225" width="190" height="70" rx="10"/>
+  <text x="380" y="253" text-anchor="middle" font-size="14" font-weight="600">Stablecoin issuer</text>
+  <text x="380" y="277" text-anchor="middle" class="lbl">mints &amp; burns 1:1</text>
+  <rect class="box-ok" x="540" y="225" width="190" height="70" rx="10"/>
+  <text x="635" y="253" text-anchor="middle" font-size="14" font-weight="600">Reserve assets</text>
+  <text x="635" y="277" text-anchor="middle" class="lbl">cash + short T-bills</text>
+
+  <text x="252" y="250" text-anchor="middle" class="lbl-accent">①</text>
+  <text x="507" y="250" text-anchor="middle" class="lbl-accent">②</text>
+  <text x="262" y="178" text-anchor="middle" class="lbl-accent">③ mint</text>
+  <text x="517" y="178" text-anchor="middle" class="lbl-ok">⑤ redeem &amp; burn</text>
+
+  <g opacity="0">
+    <circle r="11" class="coin-ok"/><text y="4" text-anchor="middle" class="coin-text">$</text>
+    <animateMotion dur="10s" repeatCount="indefinite" calcMode="linear" path="M210,260 L285,260" keyPoints="0;1;1" keyTimes="0;0.08;1"/>
+    <animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.08;0.09;0.99;1" dur="10s" repeatCount="indefinite"/>
+  </g>
+  <g opacity="0">
+    <circle r="11" class="coin-ok"/><text y="4" text-anchor="middle" class="coin-text">$</text>
+    <animateMotion dur="10s" repeatCount="indefinite" calcMode="linear" path="M475,260 L550,260" keyPoints="0;0;1;1" keyTimes="0;0.09;0.15;1"/>
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.09;0.1;0.15;0.16;1" dur="10s" repeatCount="indefinite"/>
+  </g>
+  <g opacity="0">
+    <circle r="13" class="coin"/><text y="4" text-anchor="middle" class="coin-text">x$</text>
+    <animateMotion dur="10s" repeatCount="indefinite" calcMode="linear" path="M380,225 L380,185 L145,185 L145,92 L615,92 L615,185 L420,185 L420,225" keyPoints="0;0;0.316;0.316;0.719;0.719;1;1" keyTimes="0;0.16;0.36;0.45;0.65;0.74;0.9;1"/>
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.15;0.16;0.9;0.91;1" dur="10s" repeatCount="indefinite"/>
+  </g>
+</svg>
+<figcaption>Green "$" = fiat in the banking system; orange "x$" = the stablecoin on-chain. The issuer is only involved at mint and redeem. In between, the token moves freely across wallets, venues, and apps.</figcaption>
+</figure>
+
+<h3>Lifecycle, step by step</h3>
+<ol class="steps">
+  <li><div><b>Onboard with the issuer</b><span>Only <em>minting and redeeming</em> clients (corporates, exchanges, banks) are KYC'd by the issuer. Other holders are usually KYC'd by the exchange or wallet provider they use.</span></div></li>
+  <li><div><b>Fund</b><span>The client wires USD to the issuer's account at a reserve bank.</span></div></li>
+  <li><div><b>Mint</b><span>The issuer mints tokens to the client's wallet. Good designs cap minting at <em>attested reserves</em> (proof of reserve).</span></div></li>
+  <li><div><b>Circulate</b><span>The token moves across the public chain: payments, exchanges, DeFi, bridges to other chains. Compliance relies on blocklists, on-chain analytics (Chainalysis, TRM, etc.), and the KYC done at on/off-ramps.</span></div></li>
+  <li><div><b>Redeem</b><span>Any eligible holder sends tokens back. The issuer burns them and pays USD out of reserves.</span></div></li>
+</ol>
+
+<h3>Market &amp; regulation snapshot (as of 2025, verify current status)</h3>
+<ul>
+<li><strong>Largest USD stablecoins:</strong> USDT (Tether) and USDC (Circle). Others include PYUSD (PayPal, issued by Paxos) and the euro coin EURC. Some banks issue their own, e.g. Société Générale-FORGE's EURCV and USDCV.</li>
+<li><strong>EU, MiCA:</strong> stablecoin rules (e-money tokens and asset-referenced tokens) have applied since mid-2024. Issuers need authorisation, reserves, and redemption at par.</li>
+<li><strong>US, GENIUS Act (2025):</strong> a federal framework for payment stablecoins. It requires 1:1 high-quality liquid reserves, regular public reserve disclosures, and a path for bank subsidiaries to issue, and it bars paying interest to holders.</li>
+<li><strong>Asia:</strong> Singapore (MAS single-currency stablecoin framework) and Hong Kong (stablecoin issuer licensing) have dedicated regimes.</li>
+</ul>
+
+<h3>Sample contract: <code>ReserveBackedStablecoin.sol</code></h3>
+<p>Permissionless transfers with a compliance blocklist, a hard cap that stops minting beyond attested reserves (with a staleness check on the reserve feed), and EIP-2612 <code>permit</code> so wallets can approve without paying gas.</p>
+<pre><code>{{code:contracts/ReserveBackedStablecoin.sol}}</code></pre>
+<div class="callout"><span class="title">Compare the two token contracts</span>The deposit token checks an <strong>allowlist</strong> (deny by default: you must be a known customer). The stablecoin checks a <strong>blocklist</strong> (allow by default: everyone except sanctioned addresses). That one line of difference produces most of the business differences in section 2.</div>
+
+<!-- ============================================================ -->
+<h2 id="build" data-nav="6. How to build it" data-keywords="architecture build roadmap layers HSM MPC ledger choice">6. How to build it: reference architecture</h2>
+<p>A production platform has five layers plus cross-cutting services. The same stack serves both variants; the differences are in the token layer and the ledger choice.</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 760 370" role="img" aria-label="Layered architecture: channels, programmability layer, money token, ledger, bank systems; cross-cutting identity, keys, oracles, compliance, and monitoring.">
+  <rect class="box" x="20" y="20" width="520" height="56" rx="10"/>
+  <text x="36" y="43" font-size="14" font-weight="700">Channels &amp; clients</text>
+  <text x="36" y="63" class="lbl">corporate portal · treasury APIs · ERP / TMS connectors · AI agents</text>
+  <rect class="box-accent" x="20" y="88" width="520" height="56" rx="10"/>
+  <text x="36" y="111" font-size="14" font-weight="700">Programmability layer</text>
+  <text x="36" y="131" class="lbl">audited templates: escrow · DvP / PvP · sweeps · streams · purpose-bound</text>
+  <rect class="box-accent" x="20" y="156" width="520" height="56" rx="10"/>
+  <text x="36" y="179" font-size="14" font-weight="700">Money token</text>
+  <text x="36" y="199" class="lbl">tokenized deposit OR stablecoin · mint · burn · transfer · allow/blocklist · freeze</text>
+  <rect class="box" x="20" y="224" width="520" height="56" rx="10"/>
+  <text x="36" y="247" font-size="14" font-weight="700">Ledger</text>
+  <text x="36" y="267" class="lbl">permissioned (Besu, Quorum, Canton, Corda…) or public (Ethereum, L2s, Solana…)</text>
+  <rect class="box-ok" x="20" y="292" width="520" height="56" rx="10"/>
+  <text x="36" y="315" font-size="14" font-weight="700">Bank systems</text>
+  <text x="36" y="335" class="lbl">core banking · omnibus account · payments hub · general ledger · reconciliation</text>
+
+  <rect class="box-info" x="560" y="20" width="180" height="56" rx="10"/>
+  <text x="650" y="53" text-anchor="middle" font-size="13.5" font-weight="600">Identity &amp; KYC</text>
+  <rect class="box-info" x="560" y="88" width="180" height="56" rx="10"/>
+  <text x="650" y="121" text-anchor="middle" font-size="13.5" font-weight="600">Keys: HSM / MPC</text>
+  <rect class="box-info" x="560" y="156" width="180" height="56" rx="10"/>
+  <text x="650" y="189" text-anchor="middle" font-size="13.5" font-weight="600">Oracles &amp; data feeds</text>
+  <rect class="box-info" x="560" y="224" width="180" height="56" rx="10"/>
+  <text x="650" y="257" text-anchor="middle" font-size="13.5" font-weight="600">AML · sanctions · travel rule</text>
+  <rect class="box-info" x="560" y="292" width="180" height="56" rx="10"/>
+  <text x="650" y="325" text-anchor="middle" font-size="13.5" font-weight="600">Monitoring &amp; audit</text>
+</svg>
+<figcaption>Left: the stack from client channels down to the bank's books. Right (blue): services every layer depends on.</figcaption>
+</figure>
+
+<h3>Build roadmap</h3>
+<ol class="steps">
+  <li><div><b>Pick the money model and legal wrapper</b><span>Tokenized deposit (bank liability, banking licence) or stablecoin (separate issuer entity, stablecoin licence, segregated reserves)? Get the legal opinion on <em>settlement finality</em>: when is an on-chain transfer legally final?</span></div></li>
+  <li><div><b>Choose the ledger</b><span>Permissioned (privacy, control, known validators) vs public (reach, composability, liquidity). Many banks start permissioned and add public-chain access later, as with JPMD on Base.</span></div></li>
+  <li><div><b>Write the token contract</b><span>Start from audited libraries (OpenZeppelin). Keep the token minimal: mint/burn roles, allow- or blocklist, freeze, pause, and possibly upgradeability behind a timelock and multi-sig.</span></div></li>
+  <li><div><b>Integrate core banking</b><span>Create the omnibus account. Mint only after a core debit and redeem only into a core credit, both idempotent. Run continuous reconciliation of <em>supply vs omnibus</em>.</span></div></li>
+  <li><div><b>Wallets &amp; keys</b><span>Custodial wallets for most clients, with keys in HSM or MPC, policy engines (limits, approvals), and recovery procedures. Larger clients may self-custody.</span></div></li>
+  <li><div><b>Programmability layer</b><span>Build a <em>library of audited templates</em> (escrow, DvP, sweep…) that clients parameterise. Don't let clients deploy arbitrary code against your token on day one.</span></div></li>
+  <li><div><b>Oracles &amp; events</b><span>Use signed, multi-source data feeds for real-world conditions, and keeper bots to trigger time-based actions.</span></div></li>
+  <li><div><b>Compliance</b><span>Run sanctions screening before allowlisting, transaction monitoring on-chain, Travel Rule data for transfers, and freeze/claw-back procedures.</span></div></li>
+  <li><div><b>Test, audit, pilot</b><span>Unit and fuzz tests, an external audit, a bug bounty, then a limited pilot (internal entities, then friendly clients) with volume caps.</span></div></li>
+</ol>
+
+<h3>Key design decisions</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Decision</th><th>Tokenized deposit (typical)</th><th>Stablecoin (typical)</th></tr></thead>
+<tbody>
+<tr><td>Access model</td><td>Allowlist (deny by default)</td><td>Blocklist (allow by default)</td></tr>
+<tr><td>Decimals</td><td>2, matching the core ledger</td><td>6 (USDC convention) or 18</td></tr>
+<tr><td>Privacy</td><td>Private ledger, private transactions, or zero-knowledge proofs</td><td>Public by default; addresses are pseudonymous</td></tr>
+<tr><td>Interbank / interop</td><td>Shared ledger, central bank money, or token bridges between bank networks</td><td>Cross-chain bridges or native multi-chain issuance (e.g. burn-and-mint transfer protocols)</td></tr>
+<tr><td>Gas / fees</td><td>Bank-operated validators; no gas cost to clients</td><td>Gas paid in the native coin; use paymasters and <code>permit</code> to hide it</td></tr>
+<tr><td>Upgradeability</td><td>Proxy + timelock + bank multi-sig</td><td>Proxy + timelock + multi-sig; changes are publicly visible</td></tr>
+</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="integration" data-nav="7. Bank integration code" data-keywords="typescript ethers mint service reconciliation core banking listener oracle keeper">7. Bank integration code (off-chain)</h2>
+<p>Smart contracts are maybe 20% of the work. The rest is connecting them safely to the bank. These TypeScript snippets (ethers v6) show the critical paths.</p>
+
+<h3>Mint service: core debit → tokens</h3>
+<pre><code>{{code:snippets/mint-service.ts}}</code></pre>
+
+<h3>Redemption listener: burned tokens → core credit</h3>
+<pre><code>{{code:snippets/redemption-listener.ts}}</code></pre>
+
+<h3>Continuous reconciliation</h3>
+<pre><code>{{code:snippets/reconcile.ts}}</code></pre>
+
+<h3>Client side: pay on delivery, either variant</h3>
+<pre><code>{{code:snippets/pay-with-escrow.ts}}</code></pre>
+
+<h3>Oracle keeper: real world → contract</h3>
+<pre><code>{{code:snippets/oracle-keeper.ts}}</code></pre>
+<div class="callout trap"><span class="title">⚠️ Common failure modes</span>
+<ul>
+<li><strong>Double mint</strong> on retry. Always mint with an idempotency key (here <code>coreRef</code>).</li>
+<li><strong>Mint before debit.</strong> Tokens must never exist without the matching core-banking entry.</li>
+<li><strong>Single-source oracle.</strong> One compromised API key pays out every escrow. Use multiple signed sources and limits.</li>
+<li><strong>Hot keys in env vars.</strong> Issuer and admin keys belong in an HSM or MPC behind approval policies.</li>
+</ul></div>
+
+<!-- ============================================================ -->
+<h2 id="contracts" data-nav="8. Smart contract library" data-keywords="solidity escrow DvP PvP purpose bound grant sweep payroll stream tests hardhat">8. Smart contract library with use cases</h2>
+<p>Each contract below accepts <em>any</em> ERC-20 cash token, so each works unchanged with a tokenized deposit or a stablecoin. All seven contracts on this page compile with <strong>solc 0.8.26 + OpenZeppelin 5.1</strong> and pass the Hardhat tests at the end of this section. They are teaching samples: production code needs an external audit, upgrade strategy, and fuller event and error design.</p>
+
+<h3>8.1 Trade escrow: "pay when the goods arrive"</h3>
+<p><strong>Use case:</strong> replaces a letter of credit or open-account trade. The buyer's money is provably committed, and the seller is paid the minute the bill of lading shows delivery. If nothing arrives by the deadline, the buyer is automatically refunded.</p>
+<pre><code>{{code:contracts/TradeEscrow.sol}}</code></pre>
+
+<h3>8.2 Atomic DvP / PvP settlement</h3>
+<p><strong>Use case:</strong> buy a tokenized bond, money-market-fund share, or repo collateral with cash tokens, or swap USD tokens for EUR tokens (PvP). Both legs settle in one transaction, so there's no settlement risk and no T+1/T+2 wait.</p>
+
+<figure class="diagram">
+<svg class="anim" data-still="2.6" viewBox="0 0 760 220" role="img" aria-label="Animated: a bond token moves from seller to buyer while a cash token moves from buyer to seller, both passing through the DvP contract at the same time.">
+  <defs><marker id="pm5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker></defs>
+  <path class="line" d="M190,95 L568,95" marker-end="url(#pm5)"/>
+  <path class="line" d="M570,125 L192,125" marker-end="url(#pm5)"/>
+  <rect class="box" x="20" y="70" width="170" height="80" rx="10"/>
+  <text x="105" y="102" text-anchor="middle" font-size="14" font-weight="600">Seller</text>
+  <text x="105" y="124" text-anchor="middle" class="lbl">holds tokenized bond</text>
+  <rect class="box-accent" x="290" y="40" width="180" height="140" rx="12"/>
+  <text x="380" y="64" text-anchor="middle" font-size="14" font-weight="700">DvP contract</text>
+  <text x="380" y="158" text-anchor="middle" class="lbl">atomic: both legs</text>
+  <text x="380" y="173" text-anchor="middle" class="lbl">or neither</text>
+  <rect class="box" x="570" y="70" width="170" height="80" rx="10"/>
+  <text x="655" y="102" text-anchor="middle" font-size="14" font-weight="600">Buyer</text>
+  <text x="655" y="124" text-anchor="middle" class="lbl">holds cash token</text>
+  <text x="380" y="205" text-anchor="middle" class="lbl-ok" opacity="0">✓ settled in one transaction<animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.78;0.8;0.97;1" dur="6s" repeatCount="indefinite"/></text>
+  <g>
+    <circle r="13" class="coin-info"/><text y="4" text-anchor="middle" class="coin-text">B</text>
+    <animateMotion dur="6s" repeatCount="indefinite" calcMode="linear" path="M190,95 L570,95" keyPoints="0;0;0.5;0.5;1;1" keyTimes="0;0.1;0.35;0.55;0.8;1"/>
+  </g>
+  <g>
+    <circle r="13" class="coin"/><text y="4" text-anchor="middle" class="coin-text">$</text>
+    <animateMotion dur="6s" repeatCount="indefinite" calcMode="linear" path="M570,125 L190,125" keyPoints="0;0;0.5;0.5;1;1" keyTimes="0;0.1;0.35;0.55;0.8;1"/>
+  </g>
+</svg>
+<figcaption>Blue "B" = bond token, orange "$" = cash token. If either transfer would fail (no balance, no approval, not allowlisted), the entire transaction reverts, and neither side can end up with both assets.</figcaption>
+</figure>
+<pre><code>{{code:contracts/DvPSettlement.sol}}</code></pre>
+
+<h3>8.3 Purpose-bound grant (purpose-bound money)</h3>
+<p><strong>Use case:</strong> government subsidies, disaster relief, corporate expense budgets, education grants, or insurance claims that can only be spent with approved merchants before a date. Unspent money returns to the sponsor. (The concept is popularised by MAS's Project Orchid "purpose-bound money".)</p>
+<pre><code>{{code:contracts/PurposeBoundGrant.sol}}</code></pre>
+
+<h3>8.4 Treasury sweep</h3>
+<p><strong>Use case:</strong> corporate liquidity management. Every subsidiary is kept at a target balance, excess cash flows to the group's concentration account (where it can earn yield or repay debt), and shortfalls are topped up. It runs every hour, 24/7, instead of in a nightly batch.</p>
+<pre><code>{{code:contracts/TreasurySweep.sol}}</code></pre>
+
+<h3>8.5 Payroll streaming</h3>
+<p><strong>Use case:</strong> earned-wage access, contractor and gig payouts, subscriptions, and rent. Pay accrues per second, and the worker withdraws whenever they want. If the employer cancels, the earned portion is paid and the rest refunded in the same transaction.</p>
+<pre><code>{{code:contracts/PayrollStream.sol}}</code></pre>
+
+<h3>8.6 Tests: same contracts, both variants</h3>
+<p>Mocks used by the tests (in production these are real, signed data feeds):</p>
+<pre><code>{{code:contracts/Mocks.sol}}</code></pre>
+<p>The escrow test runs twice, once per variant. Note the one extra step for the deposit token: allowlisting the escrow contract.</p>
+<pre><code>{{code:test/programmable-money.test.js}}</code></pre>
+<pre><code><span class="c">$ npx hardhat test</span>
+  Programmable money
+    ✔ tokenized deposit: only allowlisted holders can transact
+    ✔ stablecoin: cannot mint beyond attested reserves
+    ✔ escrow pays seller after delivery (tokenized deposit)
+    ✔ escrow pays seller after delivery (stablecoin)
+    ✔ escrow refunds buyer after the deadline
+    ✔ DvP settles bond and cash atomically
+    ✔ DvP reverts BOTH legs if one leg fails</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="use-cases" data-nav="9. Use cases, both ways" data-keywords="use cases cross-border trade finance repo supply chain insurance machine payments AI agents">9. Use cases: built with tokenized deposits vs stablecoins</h2>
+<p>For each use case, the smart-contract logic is the same. What changes is the <em>plumbing</em>: who must be onboarded, how money crosses institutions, and where the parties can be.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>#</th><th>Use case</th><th>Contract pattern</th><th>With tokenized deposits</th><th>With stablecoins</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><strong>Cross-border B2B payment + FX</strong></td><td>PvP (<code>DvPSettlement</code>)</td><td>USD token of Bank A ↔ EUR token of Bank B on a shared ledger, settled atomically. Both parties are bank clients.</td><td>USDC ↔ EURC swap on an exchange or on-chain FX venue. The supplier can be anywhere with a wallet.</td></tr>
+<tr><td>2</td><td><strong>Trade finance</strong> (LC replacement)</td><td><code>TradeEscrow</code> + eBL oracle</td><td>Buyer's bank locks deposit tokens. The seller's bank is on the same network, and the bank may add financing to the escrow.</td><td>Buyer locks stablecoins. Works with exporters in markets without access to the buyer's bank network.</td></tr>
+<tr><td>3</td><td><strong>Securities settlement</strong></td><td><code>DvPSettlement</code></td><td>Tokenized bond or MMF ↔ deposit token on the bank's ledger. This is the dominant institutional model today.</td><td>Tokenized treasury fund ↔ stablecoin on a public chain, used by crypto-native funds and on-chain collateral.</td></tr>
+<tr><td>4</td><td><strong>Intraday repo</strong></td><td>DvP + time-locked unwind</td><td>Cash token ↔ collateral token for hours instead of overnight; the unwind is programmed at a set time.</td><td>Possible, but rarely used by banks today because of capital treatment and counterparty concerns.</td></tr>
+<tr><td>5</td><td><strong>Treasury sweeps &amp; pooling</strong></td><td><code>TreasurySweep</code></td><td>Natural fit: all subsidiaries bank with the same group bank. Interest can be paid on the pool.</td><td>Works for multi-bank or crypto-native treasuries, but the pool can't earn interest from the issuer.</td></tr>
+<tr><td>6</td><td><strong>Payroll &amp; gig payouts</strong></td><td><code>PayrollStream</code></td><td>Employees of the bank's corporate clients get streamed deposit tokens and can redeem instantly into their accounts.</td><td>Global contractors paid in stablecoin to any wallet, cashed out locally through ramps.</td></tr>
+<tr><td>7</td><td><strong>Grants, subsidies, claims</strong></td><td><code>PurposeBoundGrant</code></td><td>Government or insurer works with banks whose merchant clients are allowlisted. Strong KYC on both sides.</td><td>Aid to unbanked recipients via mobile wallets, where the merchant allowlist is the control.</td></tr>
+<tr><td>8</td><td><strong>Supply-chain finance</strong></td><td>Escrow + auto-discounting</td><td>When the buyer approves an invoice on-chain, the bank's financing contract pays the supplier early at a discount and collects from the buyer at maturity.</td><td>Same flow, with funding from on-chain lenders or credit pools.</td></tr>
+<tr><td>9</td><td><strong>Parametric insurance</strong></td><td>Escrow + weather/flight oracle</td><td>Insurer's premium pool in deposit tokens pays out automatically when the oracle reports a flight delay or rainfall below a threshold.</td><td>Same, paying travellers or farmers directly to their wallets anywhere.</td></tr>
+<tr><td>10</td><td><strong>Machine &amp; AI-agent payments</strong></td><td>Pay-per-use / streaming</td><td>EV chargers or IoT devices of corporate clients settling with each other inside one bank network.</td><td>APIs charging AI agents per call (e.g. HTTP 402-style payment flows): micro-payments that cards can't do economically.</td></tr>
+</tbody></table></div>
+
+<h3>Walkthrough A: cross-border supplier payment</h3>
+<div class="grid">
+  <div class="card"><h4>🏦 Tokenized deposit way</h4>
+  <ol>
+    <li>A US importer (Bank A client) tokenizes $1m into aUSD.</li>
+    <li>An FX desk quotes EUR. A <code>DvPSettlement</code> trade is proposed: aUSD ↔ bEUR (Bank B, Europe).</li>
+    <li>Both affirm, and the PvP settles atomically, so no Herstatt risk.</li>
+    <li>The German exporter (Bank B client) receives bEUR and redeems to its EUR account in seconds, on a Sunday.</li>
+  </ol>
+  <p><b>Needs:</b> both banks on the same network (or connected networks); both clients onboarded.</p></div>
+  <div class="card"><h4>🪙 Stablecoin way</h4>
+  <ol>
+    <li>The importer converts USD to USDC via its bank or an on-ramp.</li>
+    <li>USDC is swapped to EURC on a regulated venue (or the exporter simply accepts USDC).</li>
+    <li>The importer transfers EURC to the exporter's wallet in seconds.</li>
+    <li>The exporter holds EURC or off-ramps to EUR with any MiCA-licensed provider.</li>
+  </ol>
+  <p><b>Needs:</b> wallets and ramps on both sides; the exporter's bank doesn't have to be involved.</p></div>
+</div>
+
+<h3>Walkthrough B: delivery-versus-payment for a tokenized bond</h3>
+<div class="grid">
+  <div class="card"><h4>🏦 Tokenized deposit way</h4>
+  <p>An asset manager buys a $100m digitally issued bond. The bond token and the bank's deposit token sit on the same permissioned ledger, and <code>DvPSettlement</code> swaps them instantly. The cash never leaves the banking system and is still a deposit, so it can be lent and earn interest.</p></div>
+  <div class="card"><h4>🪙 Stablecoin way</h4>
+  <p>A crypto-native fund buys a tokenized T-bill fund share on a public chain with USDC through the same DvP contract. It settles instantly too, but the cash leg is a claim on Circle's reserves rather than on a bank.</p></div>
+</div>
+
+<h3>Walkthrough C: disaster-relief grant</h3>
+<div class="grid">
+  <div class="card"><h4>🏦 Tokenized deposit way</h4>
+  <p>The government deposits funds with participating banks, which mint deposit tokens into a <code>PurposeBoundGrant</code>. Approved pharmacies and grocers (bank clients) are allowlisted. Recipients spend through their banking app, and unspent funds return after 90 days.</p></div>
+  <div class="card"><h4>🪙 Stablecoin way</h4>
+  <p>An NGO funds the grant with USDC. Recipients without bank accounts receive phone-wallet allowances. Local merchants are approved in the contract and cash out through local ramps. It reaches people banks can't, with weaker identity guarantees.</p></div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="simulator" data-nav="10. Try it: escrow simulator" data-keywords="interactive demo simulator">10. Try it: programmable escrow simulator</h2>
+<p>A buyer has locked $50,000 in <code>TradeEscrow</code>. Change the conditions and the rail to see what the contracts on this page would do.</p>
+<div class="demo" id="pmDemo">
+  <div class="controls" role="radiogroup" aria-label="Money variant">
+    <label><input type="radio" name="pmRail" value="deposit" checked> Tokenized deposit (aUSD)</label>
+    <label><input type="radio" name="pmRail" value="stable"> Stablecoin (xUSD)</label>
+  </div>
+  <div class="controls">
+    <label><input type="checkbox" id="pmKyc" checked> Seller is a KYC'd bank client</label>
+    <label><input type="checkbox" id="pmDelivered"> Oracle: goods delivered</label>
+    <label><input type="checkbox" id="pmDeadline"> Deadline has passed</label>
+    <label><input type="checkbox" id="pmSanction"> Seller hits a sanctions list</label>
+    <label><input type="checkbox" id="pmPaused"> Issuer paused the token</label>
+  </div>
+  <div class="pm-result" id="pmResult" aria-live="polite"></div>
+  <ul class="pm-trace" id="pmTrace"></ul>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="banks" data-nav="11. Why it's good for banks" data-keywords="benefits banks revenue deposits liquidity reconciliation 24/7 capital">11. Why programmable money is good for banks</h2>
+
+<div class="grid">
+  <div class="card"><h4>🛡️ Defend the deposit base</h4><p>If corporates move cash into stablecoins to get 24/7 programmable payments, deposits leave the bank's balance sheet. Tokenized deposits give clients the same features while the money stays a deposit that funds lending.</p></div>
+  <div class="card"><h4>⏱️ 24/7 instant settlement</h4><p>No cut-offs, weekends, or holiday gaps. Treasurers can move liquidity across entities and time zones whenever they need to, which is a major selling point for multinational clients.</p></div>
+  <div class="card"><h4>💧 Intraday liquidity efficiency</h4><p>Atomic DvP/PvP removes the need to pre-fund or post large buffers. Intraday repo lets banks borrow cash for hours against collateral, which lowers liquidity costs.</p></div>
+  <div class="card"><h4>🧾 Less reconciliation &amp; ops cost</h4><p>One shared ledger instead of many mismatched books means fewer breaks, exceptions, and manual checks. Settlement and payment are the same event.</p></div>
+  <div class="card"><h4>💼 New fee revenue</h4><p>Programmable treasury services, escrow-as-a-service, conditional trade-finance products, DvP settlement for tokenized assets, and API/automation fees.</p></div>
+  <div class="card"><h4>🔍 Compliance by design</h4><p>Allowlists, freezes, limits, and audit trails are enforced in code on every transfer. Regulators can get read-only views of the ledger.</p></div>
+  <div class="card"><h4>🔗 Tokenized-asset gateway</h4><p>Tokenized bonds, funds, and deposits need on-chain cash. The bank that provides the cash leg sits at the centre of tokenized capital markets.</p></div>
+  <div class="card"><h4>🪙 Stablecoin business lines</h4><p>Even without issuing its own coin, a bank can hold issuer reserves, provide custody, run fiat on/off-ramps, offer settlement accounts for crypto firms, or issue a stablecoin through a subsidiary where the law allows.</p></div>
+</div>
+
+<h3>Which variant should a bank choose?</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Goal</th><th>Better fit</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Keep deposits on balance sheet, serve corporate treasury</td><td>Tokenized deposit</td><td>Keeps deposit funding and lending capacity, can pay interest, and is covered by existing banking rules.</td></tr>
+<tr><td>Settle tokenized securities with institutional clients</td><td>Tokenized deposit</td><td>The cash leg is in commercial bank money with strong legal certainty. This is the model used by most bank-led platforms.</td></tr>
+<tr><td>Reach clients and counterparties outside your network</td><td>Stablecoin</td><td>Public-chain reach. Any wallet worldwide, with no need for every party to join one bank network.</td></tr>
+<tr><td>Serve crypto/DeFi markets and fintech partners</td><td>Stablecoin</td><td>That's where the liquidity and integrations already are.</td></tr>
+<tr><td>Earn fee income without balance-sheet use</td><td>Stablecoin services</td><td>Reserve custody, ramps, and settlement accounts.</td></tr>
+</tbody></table></div>
+<div class="callout exam"><span class="title">🎯 Takeaway</span>For most banks the answer is <strong>both</strong>: tokenized deposits for their own clients and balance sheet, and stablecoin services (custody, ramps, reserve banking) to take part in the open-network economy. The smart-contract layer can be shared, because all the contracts on this page are token-agnostic.</div>
+
+<!-- ============================================================ -->
+<h2 id="risks" data-nav="12. Risks, controls & regulation" data-keywords="risks smart contract bug oracle privacy interoperability Basel capital">12. Risks, controls &amp; regulation</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Risk</th><th>What can go wrong</th><th>Controls</th></tr></thead>
+<tbody>
+<tr><td>Smart-contract bugs</td><td>Funds locked forever or drained</td><td>Audited libraries, external audits, formal verification for core contracts, caps, pause switch, bug bounty</td></tr>
+<tr><td>Oracle manipulation</td><td>A fake "delivered" signal releases escrow</td><td>Multiple signed sources, thresholds, dispute windows, amount limits</td></tr>
+<tr><td>Key compromise</td><td>Attacker mints or moves funds</td><td>HSM/MPC, multi-sig with role separation, timelocks on admin actions, mint limits per period</td></tr>
+<tr><td>Fragmentation</td><td>Each bank's token is an island, and money isn't "single"</td><td>Shared ledgers, central-bank-money settlement, interoperability standards</td></tr>
+<tr><td>Privacy</td><td>Competitors see payment flows on a shared ledger</td><td>Permissioned ledgers, private transactions, zero-knowledge proofs</td></tr>
+<tr><td>Legal finality</td><td>On-chain transfer not recognised as final in insolvency</td><td>Legal opinions, rulebooks, designated settlement-system status</td></tr>
+<tr><td>Stablecoin run / de-peg</td><td>Doubts about reserves trigger mass redemptions</td><td>High-quality liquid reserves, frequent attestations, on-chain proof of reserve, redemption SLAs</td></tr>
+<tr><td>Capital treatment</td><td>Holding crypto assets is expensive for banks</td><td>Under the Basel crypto-asset standard, tokenized traditional assets (e.g. deposit tokens) can qualify for treatment like the underlying, while stablecoins face extra tests. The standard is being reviewed, especially for permissionless chains, so follow your regulator.</td></tr>
+</tbody></table></div>
+
+<!-- ============================================================ -->
+<h2 id="quiz" data-nav="Self-check quiz">Self-check quiz</h2>
+<p class="quiz-score">Score: 0 / 0 answered</p>
+
+<div class="quiz" data-answer="c">
+  <div class="q">1 · What is the main legal difference between a tokenized deposit and a fiat-backed stablecoin?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Tokenized deposits run on blockchains; stablecoins don't</button>
+    <button class="opt" data-k="b">B. Stablecoins can be programmed; tokenized deposits can't</button>
+    <button class="opt" data-k="c">C. A tokenized deposit is a liability of the bank; a stablecoin is a claim on the issuer, backed by reserves</button>
+    <button class="opt" data-k="d">D. There is no legal difference, only a branding difference</button>
+  </div>
+  <div class="why"><b>C.</b> Both are programmable tokens. The core difference is whose liability the token is, which drives deposit insurance, interest, balance-sheet treatment, and regulation.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+  <div class="q">2 · A bank's escrow contract keeps reverting when clients try to lock deposit tokens in it. What's the most likely cause?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Deposit tokens can't be held by smart contracts</button>
+    <button class="opt" data-k="b">B. The escrow contract's address isn't on the token's allowlist</button>
+    <button class="opt" data-k="c">C. The oracle hasn't reported delivery yet</button>
+    <button class="opt" data-k="d">D. The token's decimals are 2 instead of 18</button>
+  </div>
+  <div class="why"><b>B.</b> With an allowlist token, every receiver, including contracts, must be permitted. The oracle only matters at <code>release()</code>, not at <code>open()</code>.</div>
+</div>
+
+<div class="quiz" data-answer="d">
+  <div class="q">3 · Which property removes settlement (Herstatt) risk in an FX or securities trade?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. 24/7 availability</button>
+    <button class="opt" data-k="b">B. Using a stablecoin instead of a deposit</button>
+    <button class="opt" data-k="c">C. A KYC allowlist</button>
+    <button class="opt" data-k="d">D. Atomic settlement: both legs move in one transaction or neither moves</button>
+  </div>
+  <div class="why"><b>D.</b> Atomic DvP/PvP means no party can deliver without receiving. That works with either cash variant.</div>
+</div>
+
+<div class="quiz" data-answer="a">
+  <div class="q">4 · What invariant must a deposit-token bank continuously reconcile?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. On-chain token supply equals the balance of the token omnibus account in core banking</button>
+    <button class="opt" data-k="b">B. Token supply equals the bank's total deposits</button>
+    <button class="opt" data-k="c">C. Token supply equals central bank reserves</button>
+    <button class="opt" data-k="d">D. Token supply equals the number of allowlisted wallets</button>
+  </div>
+  <div class="why"><b>A.</b> Every token must be matched 1:1 by money moved into the omnibus account. A mismatch means a double mint, a missed redemption, or worse. Pause and investigate.</div>
+</div>
+
+<div class="quiz" data-answer="c">
+  <div class="q">5 · Why do regulators generally prefer "programmable payments" over restrictions coded into the money itself?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Programmable payments are cheaper in gas</button>
+    <button class="opt" data-k="b">B. Restrictions in money are impossible to implement</button>
+    <button class="opt" data-k="c">C. It preserves the singleness of money: every unit stays fully fungible</button>
+    <button class="opt" data-k="d">D. Programmable payments don't need a ledger</button>
+  </div>
+  <div class="why"><b>C.</b> If some dollars can't be spent everywhere, they're no longer equal to other dollars. Keeping rules in separate contracts (like <code>PurposeBoundGrant</code>) avoids this.</div>
+</div>
+
+<div class="quiz" data-answer="b">
+  <div class="q">6 · A bank wants to stop corporate deposits leaking into stablecoins while offering 24/7 programmable treasury. Which is the best first move?</div>
+  <div class="opts">
+    <button class="opt" data-k="a">A. Ban clients from using stablecoins</button>
+    <button class="opt" data-k="b">B. Launch tokenized deposits with sweep/escrow templates for corporate clients</button>
+    <button class="opt" data-k="c">C. Issue a stablecoin backed by its loan book</button>
+    <button class="opt" data-k="d">D. Wait for a retail CBDC</button>
+  </div>
+  <div class="why"><b>B.</b> Tokenized deposits give clients the features they want while the money stays a deposit on the bank's balance sheet. A stablecoin must be backed by high-quality liquid reserves, not loans.</div>
+</div>
+
+<nav class="pager">
+  <a href="how-llms-work.html">← How LLMs Work</a>
+  <a href="../index.html">Home →</a>
+</nav>
+<footer class="site">CCA Study Hub · personal study notes · not an official Anthropic resource · not financial or legal advice</footer>
+
+</article>
+</main>
+<script>
+/* Animated diagrams: play/pause button; start paused for reduced-motion users */
+(function () {
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  document.querySelectorAll("figure.diagram svg.anim").forEach((svg) => {
+    const cap = svg.closest("figure").querySelector("figcaption");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "anim-btn";
+    const set = (playing) => {
+      playing ? svg.unpauseAnimations() : svg.pauseAnimations();
+      btn.textContent = playing ? "⏸ Pause" : "▶ Play";
+      btn.setAttribute("aria-pressed", String(!playing));
+    };
+    btn.addEventListener("click", () => set(svg.animationsPaused()));
+    cap.prepend(btn);
+    if (reduce) { svg.setCurrentTime(parseFloat(svg.dataset.still) || 0); set(false); }
+    else set(true);
+  });
+})();
+
+/* Escrow simulator: mirrors TradeEscrow + the two token contracts */
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const out = $("pmResult"), trace = $("pmTrace");
+  const inputs = [...document.querySelectorAll("#pmDemo input")];
+
+  function evaluate() {
+    const rail = document.querySelector('input[name="pmRail"]:checked').value;
+    const deposit = rail === "deposit";
+    const kyc = $("pmKyc").checked, delivered = $("pmDelivered").checked;
+    const late = $("pmDeadline").checked, sanctioned = $("pmSanction").checked, paused = $("pmPaused").checked;
+    const tok = deposit ? "aUSD" : "xUSD";
+    const steps = [];
+    let cls, text;
+
+    if (!deposit) steps.push("Stablecoin is allow-by-default: the seller's KYC status is not checked by the token (only the blocklist is).");
+    if (paused) {
+      cls = "bad"; text = "Blocked: token is paused";
+      steps.push(`${tok} is paused by the issuer, so every transfer reverts. Funds stay safely in escrow until it's unpaused.`);
+    } else if (delivered) {
+      steps.push("release(): oracle.isDelivered(shipment) = true → transfer to seller.");
+      if (sanctioned) {
+        cls = "bad"; text = "Blocked: seller is sanctioned";
+        steps.push(deposit
+          ? "Compliance froze the seller (setFrozen), so _update reverts with \"receiver not permitted\"."
+          : "Seller is on the blocklist, so _update reverts with \"address blocked\".");
+        steps.push("Funds remain in escrow pending a compliance decision (possibly a court-ordered return to the buyer).");
+      } else if (deposit && !kyc) {
+        cls = "bad"; text = "Blocked: seller not onboarded";
+        steps.push("Seller's wallet isn't on the allowlist, so _update reverts with \"receiver not permitted\".");
+        steps.push("Fix: seller onboards with a participating bank, then anyone can call release() again.");
+      } else {
+        cls = "ok"; text = "Released: seller paid $50,000";
+        steps.push(deposit
+          ? "Seller receives aUSD. If the seller banks elsewhere, Bank A's token is redeemed, the seller's bank mints its own token, and the two banks settle in central bank money."
+          : "Seller receives xUSD in their wallet. The same token can be held, paid on, or redeemed with the issuer for USD. There's no interbank leg.");
+        if (late) steps.push("Note: the deadline only governs refunds. Proven delivery can still be paid after it.");
+      }
+    } else if (late) {
+      steps.push("refund(): deadline passed and oracle shows no delivery → transfer to buyer.");
+      if (sanctioned) steps.push("The seller's sanctions status doesn't affect a refund to the buyer.");
+      cls = "warn"; text = "Refunded: buyer gets $50,000 back";
+    } else {
+      cls = "wait"; text = "Held in escrow";
+      steps.push("release() reverts (\"not delivered\") and refund() reverts (\"deadline not reached\"). Nobody can move the funds yet.");
+    }
+    out.className = "pm-result " + cls;
+    out.textContent = text;
+    trace.innerHTML = steps.map((s) => `<li>${s}</li>`).join("");
+    $("pmKyc").closest("label").classList.toggle("muted", !deposit);
+  }
+  inputs.forEach((i) => i.addEventListener("change", evaluate));
+  evaluate();
+})();
+</script>
+<script src="../assets/site.js"></script>
+</body>
+</html>
