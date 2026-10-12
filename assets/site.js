@@ -11,6 +11,7 @@ const SITE = { title: "CCA Study Hub", subtitle: "Claude Certified Architect –
 const TOPICS = [
   { id: "claude-code", title: "Claude Code", href: "topics/claude-code.html", icon: "⌘", group: "Topics", ready: true, domain: "D1 · D2 · D5" },
   { id: "how-llms-work", title: "How LLMs Work", href: "topics/how-llms-work.html", icon: "◇", group: "Topics", ready: true, domain: "Foundations" },
+  { id: "programmable-money", title: "Programmable Money", href: "topics/programmable-money.html", icon: "$", group: "Fintech", ready: true, domain: "Fintech" },
   { id: "agentic-architecture", title: "Agentic Architecture", href: "topics/agentic-architecture.html", icon: "⟳", group: "Coming next", ready: false, domain: "D1" },
   { id: "tools-mcp", title: "Tool Design & MCP", href: "topics/tools-mcp.html", icon: "⚙", group: "Coming next", ready: false, domain: "D4" },
   { id: "prompt-engineering", title: "Prompt Eng. & Structured Output", href: "topics/prompt-engineering.html", icon: "✎", group: "Coming next", ready: false, domain: "D3" },

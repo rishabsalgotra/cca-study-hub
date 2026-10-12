@@ -173,6 +173,32 @@ a.card:hover { border-color: var(--accent); transform: translateY(-2px); }
 .diagram svg .line-accent { stroke: var(--accent); fill: none; stroke-width: 1.8; }
 .diagram svg .lbl { fill: var(--muted); font-size: 12px; }
 .diagram svg .lbl-accent { fill: var(--accent); font-size: 12px; font-weight: 700; }
+.diagram svg .lbl-ok { fill: var(--ok); font-size: 12px; font-weight: 700; }
+.diagram svg .box-info { fill: var(--info-soft); stroke: var(--info); }
+.diagram svg .zone { fill: none; stroke: var(--border); stroke-width: 1.5; stroke-dasharray: 6 5; }
+.diagram svg .dash { stroke-dasharray: 5 4; }
+
+/* Animated SVG diagrams (SMIL): moving coins + a play/pause button in the caption */
+.diagram svg .coin { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.diagram svg .coin-ok { fill: var(--ok); stroke: var(--surface); stroke-width: 2; }
+.diagram svg .coin-info { fill: var(--info); stroke: var(--surface); stroke-width: 2; }
+.diagram svg .coin-text { fill: var(--bg); font-size: 11px; font-weight: 800; }
+.diagram svg .light-red { fill: var(--bad); }
+.diagram svg .light-green { fill: var(--ok); }
+.anim-btn {
+  font: 12px var(--font); color: var(--text); background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 1px 8px; margin-right: 8px; cursor: pointer; vertical-align: 1px;
+}
+.anim-btn:hover { border-color: var(--accent); }
+
+/* Result banner + trace for interactive simulators */
+.pm-result { font-weight: 700; border-radius: 8px; padding: .55rem .8rem; margin-top: .4rem; border: 1px solid var(--border); }
+.pm-result.ok   { background: var(--ok-soft);   border-color: var(--ok);   color: var(--ok); }
+.pm-result.bad  { background: var(--bad-soft);  border-color: var(--bad);  color: var(--bad); }
+.pm-result.warn { background: var(--warn-soft); border-color: var(--warn); color: var(--warn); }
+.pm-result.wait { background: var(--info-soft); border-color: var(--info); color: var(--info); }
+.pm-trace { margin: .7rem 0 0; font-size: 14.5px; color: var(--muted); }
+.demo label.muted { opacity: .5; }
 
 .precedence { list-style: none; padding: 0; counter-reset: p; }
 .precedence li {

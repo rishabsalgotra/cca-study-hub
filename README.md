@@ -10,6 +10,8 @@ cca-site/
 │   └── site.js             menu, TOC, search, theme, quiz, progress, TOPICS list
 └── topics/
     ├── claude-code.html    Topic 1
+    ├── how-llms-work.html  Topic 2
+    ├── programmable-money.html  Topic 3 (Fintech): tokenized deposits & stablecoins
     └── _template.html      copy this to add a topic
 ```
 
