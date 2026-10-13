@@ -4,22 +4,40 @@
    TO ADD A NEW TOPIC:
    1. Copy topics/_template.html to topics/<id>.html and write content.
       Every <h2 id="..."> automatically becomes a menu entry.
-   2. Add one entry to TOPICS below (set ready: true).
+   2. Add one entry to TOPICS below (set ready: true and a group id).
+   3. Rebuild the search index: python3 tools/build_search_index.py
+   Menu, home page, search filters and prev/next links all follow GROUPS order.
    ========================================================== */
 const SITE = { title: "Quantum Computing", subtitle: "quantumcompute.world · study notes", mark: "QC" };
 
-const TOPICS = [
-  { id: "quantum-basics", title: "Quantum Basics", href: "topics/quantum-basics.html", icon: "⚛", group: "Quantum computing", ready: true, domain: "Basics" },
-  { id: "claude-code", title: "Claude Code", href: "topics/claude-code.html", icon: "⌘", group: "Topics", ready: true, domain: "D1 · D2 · D5" },
-  { id: "how-llms-work", title: "How LLMs Work", href: "topics/how-llms-work.html", icon: "◇", group: "Topics", ready: true, domain: "Foundations" },
-  { id: "agentic-architecture", title: "Agentic Architecture", href: "topics/agentic-architecture.html", icon: "⟳", group: "Topics", ready: true, domain: "D1" },
-  { id: "tools-mcp", title: "Tool Design & MCP", href: "topics/tools-mcp.html", icon: "⚙", group: "Topics", ready: true, domain: "D4" },
-  { id: "harness-engineering", title: "Harness Engineering", href: "topics/harness-engineering.html", icon: "⛭", group: "Topics", ready: true, domain: "D1 · D2 · D5" },
-  { id: "programmable-money", title: "Programmable Money", href: "topics/programmable-money.html", icon: "$", group: "Fintech", ready: true, domain: "Fintech" },
-  { id: "tps-architecture", title: "1K vs 1M TPS", href: "topics/tps-architecture.html", icon: "⇶", group: "Enterprise architecture", ready: true, domain: "AWS" },
-  { id: "prompt-engineering", title: "Prompt Eng. & Structured Output", href: "topics/prompt-engineering.html", icon: "✎", group: "Coming next", ready: false, domain: "D3" },
-  { id: "context-reliability", title: "Context & Reliability", href: "topics/context-reliability.html", icon: "◎", group: "Coming next", ready: false, domain: "D5" },
+/* Areas of the site, in display order. */
+const GROUPS = [
+  { id: "quantum", title: "Quantum Computing" },
+  { id: "ai", title: "AI" },
+  { id: "claude-cert", title: "Claude Certification" },
+  { id: "cloud", title: "Cloud Computing" },
+  { id: "crypto", title: "Crypto & Blockchain" },
 ];
+
+const TOPICS = [
+  { id: "quantum-basics", title: "Quantum Basics", href: "topics/quantum-basics.html", icon: "⚛", group: "quantum", ready: true, domain: "Basics" },
+  { id: "how-llms-work", title: "How LLMs Work", href: "topics/how-llms-work.html", icon: "◇", group: "ai", ready: true, domain: "Foundations" },
+  { id: "agentic-architecture", title: "Agentic Architecture", href: "topics/agentic-architecture.html", icon: "⟳", group: "ai", ready: true, domain: "D1" },
+  { id: "tools-mcp", title: "Tool Design & MCP", href: "topics/tools-mcp.html", icon: "⚙", group: "ai", ready: true, domain: "D4" },
+  { id: "harness-engineering", title: "Harness Engineering", href: "topics/harness-engineering.html", icon: "⛭", group: "ai", ready: true, domain: "D1 · D2 · D5" },
+  { id: "claude-code", title: "Claude Code", href: "topics/claude-code.html", icon: "⌘", group: "claude-cert", ready: true, domain: "D1 · D2 · D5" },
+  { id: "prompt-engineering", title: "Prompt Eng. & Structured Output", href: "topics/prompt-engineering.html", icon: "✎", group: "claude-cert", ready: false, domain: "D3" },
+  { id: "context-reliability", title: "Context & Reliability", href: "topics/context-reliability.html", icon: "◎", group: "claude-cert", ready: false, domain: "D5" },
+  { id: "tps-architecture", title: "1K vs 1M TPS", href: "topics/tps-architecture.html", icon: "⇶", group: "cloud", ready: true, domain: "AWS" },
+  { id: "programmable-money", title: "Programmable Money", href: "topics/programmable-money.html", icon: "$", group: "crypto", ready: true, domain: "Fintech" },
+];
+
+/* Search: "static" today. To add agentic answers later, set mode to "hybrid" (static hits +
+   AI answer) or "agentic", and point agentEndpoint at a service implementing docs/search.md. */
+window.SEARCH_CONFIG = { mode: "static", agentEndpoint: null };
+
+/* Topics in display order (group order, then TOPICS order within a group). */
+const ORDERED_TOPICS = GROUPS.flatMap((g) => TOPICS.filter((t) => t.group === g.id));
 
 (function () {
   const body = document.body;
@@ -59,11 +77,13 @@ const TOPICS = [
 
   function renderSidebar(filter = "") {
     const f = filter.trim().toLowerCase();
-    let html = `<input class="search" type="search" placeholder="Filter sections…" value="${filter.replace(/"/g, "&quot;")}" aria-label="Filter sections">`;
+    let html = sections.length
+      ? `<input class="search" type="search" placeholder="Filter this page's sections…" value="${filter.replace(/"/g, "&quot;")}" aria-label="Filter this page's sections">`
+      : "";
     html += `<a class="nav-topic ${currentId === "home" ? "active" : ""}" href="${root}/index.html"><span>⌂</span>Home</a>`;
     let lastGroup = null;
-    for (const t of TOPICS) {
-      if (t.group !== lastGroup) { html += `<div class="nav-group">${t.group}</div>`; lastGroup = t.group; }
+    for (const t of ORDERED_TOPICS) {
+      if (t.group !== lastGroup) { html += `<div class="nav-group">${GROUPS.find((g) => g.id === t.group).title}</div>`; lastGroup = t.group; }
       const active = t.id === currentId;
       html += `<a class="nav-topic ${active ? "active" : ""} ${t.ready ? "" : "soon"}" href="${root}/${t.href}">
         <span>${t.icon}</span>${t.title}<span class="badge">${t.ready ? t.domain : "soon"}</span></a>`;
@@ -79,7 +99,7 @@ const TOPICS = [
     }
     sidebar.innerHTML = html;
     const input = sidebar.querySelector(".search");
-    input.addEventListener("input", (e) => {
+    if (input) input.addEventListener("input", (e) => {
       const pos = e.target.selectionStart;
       renderSidebar(e.target.value);
       const again = sidebar.querySelector(".search");
@@ -106,7 +126,7 @@ const TOPICS = [
     label.querySelector("input").addEventListener("change", (e) => {
       e.target.checked ? done.add(h.id) : done.delete(h.id);
       store.set(doneKey, [...done]);
-      renderSidebar(sidebar.querySelector(".search").value);
+      renderSidebar(sidebar.querySelector(".search")?.value || "");
     });
     h.after(label);
   }
@@ -188,8 +208,28 @@ const TOPICS = [
   /* ---- Home page topic cards (optional container) ---- */
   const cards = document.querySelector("[data-topic-cards]");
   if (cards) {
-    cards.innerHTML = TOPICS.map(t => t.ready
+    const card = (t) => t.ready
       ? `<a class="card" href="${root}/${t.href}"><h4>${t.icon} ${t.title}</h4><p class="pill">${t.domain}</p></a>`
-      : `<div class="card disabled"><h4>${t.icon} ${t.title}</h4><p class="pill">Coming soon · ${t.domain}</p></div>`).join("");
+      : `<div class="card disabled"><h4>${t.icon} ${t.title}</h4><p class="pill">Coming soon · ${t.domain}</p></div>`;
+    cards.classList.remove("grid");
+    cards.innerHTML = GROUPS.map((g) => {
+      const ts = TOPICS.filter((t) => t.group === g.id);
+      return ts.length ? `<section class="topic-group"><h4 class="topic-group-title">${g.title}</h4><div class="grid">${ts.map(card).join("")}</div></section>` : "";
+    }).join("");
   }
+
+  /* ---- Prev / next links follow the menu order (static HTML pager is the no-JS fallback) ---- */
+  const pager = document.querySelector("nav.pager");
+  const live = ORDERED_TOPICS.filter((t) => t.ready);
+  const pos = live.findIndex((t) => t.id === currentId);
+  if (pager && pos >= 0) {
+    const prev = live[pos - 1], next = live[pos + 1];
+    pager.innerHTML = `${prev ? `<a href="${root}/${prev.href}">← ${prev.title}</a>` : `<a href="${root}/index.html">← Home</a>`}
+      ${next ? `<a href="${root}/${next.href}">${next.title} →</a>` : `<a href="${root}/index.html">Home →</a>`}`;
+  }
+
+  /* ---- Site search (static index now; agentic provider later, see docs/search.md) ---- */
+  const searchScript = document.createElement("script");
+  searchScript.src = `${root}/assets/search.js`;
+  document.body.appendChild(searchScript);
 })();
