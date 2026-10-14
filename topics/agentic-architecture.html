@@ -7,6 +7,7 @@
 <link rel="canonical" href="https://www.quantumcompute.world/topics/agentic-architecture.html">
 <meta name="description" content="Agentic architecture from first principles to production: the agent loop, workflows vs agents, the five workflow patterns, multi-agent orchestration, context engineering, memory, planning, and reliability, with animated diagrams and tested code.">
 <link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/games.css?v=1">
 </head>
 <body data-root=".." data-topic="agentic-architecture">
 <main>
@@ -21,6 +22,17 @@
   <span class="pill"><b>4</b> runnable code files</span>
   <span class="pill">≈ 75 min read</span>
 </div>
+
+<nav class="qarcade" aria-labelledby="arcade-title">
+  <div class="qa-head"><div><span class="qg-tag">Learn by playing</span><h3 id="arcade-title">Arcade: 4 mini-games</h3></div><span class="qa-total" data-arcade-total>0 / 12 stars</span></div>
+  <p class="qnote">Each game turns one idea from this page into something you can try, paired with an everyday comparison. They sit inside the sections they teach; jump to any of them here. Stars are saved in this browser.</p>
+  <ol class="qa-list">
+    <li><a href="#game-ag-loop" data-arcade="ag-loop"><b>Be the harness</b><span>Agent loop · a restaurant waiter</span></a></li>
+    <li><a href="#game-ag-when" data-arcade="ag-when"><b>Recipe or chef?</b><span>Workflows vs agents</span></a></li>
+    <li><a href="#game-ag-pattern" data-arcade="ag-pattern"><b>Name that pattern</b><span>Five patterns · a restaurant kitchen</span></a></li>
+    <li><a href="#game-ag-pack" data-arcade="ag-pack"><b>Pack the carry-on</b><span>Context engineering · a limited bag</span></a></li>
+  </ol>
+</nav>
 
 <!-- ============================================================ -->
 <h2 id="what" data-nav="1. What is an agent?" data-keywords="definition autonomy spectrum workflow agent llm tools loop environment">1. What is an agent?</h2>
@@ -248,6 +260,14 @@ if __name__ == "__main__":
                 print(block.text)</code></pre>
 <p>Write the loop by hand when you need control the runner doesn't give you. Otherwise prefer the runner. Its per-turn hooks still let you add approvals and logging.</p>
 
+<div class="qgame" id="game-ag-loop" data-game="ag-loop" data-engine="sort">
+  <div class="qg-head"><div><span class="qg-tag">Game · The agent loop</span><h4>Be the harness</h4></div><span class="qg-stars" data-stars></span></div>
+  <p class="qg-analogy"><b>Everyday picture: a restaurant waiter.</b> The chef (the model) writes order slips (<code>tool_use</code>). You, the waiter (the harness), take every slip to the right station, bring all the dishes back on one tray (<code>tool_result</code>), and only serve the table when the chef says the meal is done (<code>end_turn</code>).</p>
+  <p>A user asks: <i>“Will it rain in Paris tomorrow, and should I move my picnic to Saturday?”</i> You are the code running the loop. Make the right call at each step.</p>
+  <div class="qs" data-stage></div>
+  <script type="application/json" data-items>{"keepOrder": true, "question": "What does your harness do next?", "items": [{"html": "Claude replies:<pre class=\"qs-code\">content: [\n  text: \"Let me check both days.\"\n  tool_use  id=t1  get_forecast(city=\"Paris\", day=\"tomorrow\")\n  tool_use  id=t2  get_forecast(city=\"Paris\", day=\"Saturday\")\n]\nstop_reason: \"tool_use\"<\/pre>", "options": [{"id": "a", "label": "Show “Let me check both days.” to the user and stop"}, {"id": "b", "label": "Append Claude's full reply, run both tools, send both results back in one user message"}, {"id": "c", "label": "Run t1 now and send its result; do t2 on the next turn"}, {"id": "d", "label": "Append just the text, then add the two results"}], "answer": "b", "why": "stop_reason is tool_use, so the turn isn't over. Append the full content (the tool_use blocks must be in history so each tool_use_id has a match), and return all parallel results in one message. Splitting them teaches the model to stop making parallel calls."}, {"html": "Running <code>t2<\/code> fails: the weather service times out.", "options": [{"id": "a", "label": "Raise an exception and end the loop"}, {"id": "b", "label": "Leave t2 out of the results"}, {"id": "c", "label": "Return a tool_result for t2 with is_error: true and a helpful message"}, {"id": "d", "label": "Retry the call until it works"}], "answer": "c", "why": "A failed tool should come back as is_error: true with actionable text (“timed out; try get_forecast_cached”). The model can usually recover; a crashed loop can't. Every tool_use needs a matching tool_result, and endless retries are an unbounded loop."}, {"html": "Claude replies:<pre class=\"qs-code\">content: [ text: \"Tomorrow: 80% chance of rain. Saturday: sunny, 22°C.\n          Move the picnic to Saturday.\" ]\nstop_reason: \"end_turn\"<\/pre>", "options": [{"id": "a", "label": "Return the answer to the user (after any checks you need)"}, {"id": "b", "label": "Send the conversation back so Claude can continue"}, {"id": "c", "label": "Keep looping until the turn limit"}], "answer": "a", "why": "end_turn means the model is done. Return the answer, or verify it first when there's something to check (tests, a schema)."}, {"html": "Another day, the reply ends mid-sentence:<pre class=\"qs-code\">content: [ text: \"Here is your 7-day forecast: Monday 18°C, Tuesday 2\" ]\nstop_reason: \"max_tokens\"<\/pre>", "options": [{"id": "a", "label": "Show it: the model said what it had to say"}, {"id": "b", "label": "Raise max_tokens or ask Claude to continue"}, {"id": "c", "label": "Treat it as a refusal and stop"}], "answer": "b", "why": "max_tokens means the output hit your cap and was cut off. Never treat a truncated answer as done."}, {"html": "Claude has called <code>search_web<\/code> 30 times in a row, each time with a slightly different query, and shows no sign of stopping.", "options": [{"id": "a", "label": "Let it run: it will stop eventually"}, {"id": "b", "label": "Enforce a budget on turns, tokens or dollars, and stop with a clear message when it's hit"}, {"id": "c", "label": "Delete the earlier search results from the history to make room"}], "answer": "b", "why": "Agents can loop. Always cap turns, tokens or cost. Deleting history breaks the append-only rule (and the cache)."}], "perfect": "Flawless service. That's the whole loop: branch on stop_reason, append the full reply, return every result in one message, turn errors into data, and always have a budget."}</script>
+</div>
+
 <!-- ============================================================ -->
 <h2 id="when" data-nav="3. Workflows vs agents" data-keywords="when to use agent workflow decision simplest">3. Workflows vs agents: choose the simplest thing that works</h2>
 <p>The most common architecture mistake is building an agent when a workflow would do. A <strong>workflow</strong> runs LLM calls along paths <em>your code</em> defines. An <strong>agent</strong> lets the model choose the path. Workflows are cheaper, faster, and much easier to test. Agents are for problems whose steps you can't predict in advance.</p>
@@ -260,6 +280,14 @@ if __name__ == "__main__":
 <tr><td><strong>Cost of error:</strong> Can mistakes be caught and undone (tests, review, rollback)?</td><td>Add approval gates, or don't automate it</td></tr>
 </tbody></table></div>
 <div class="callout exam"><span class="title">🎯 Exam lens</span>When a scenario has <em>known, fixed steps</em> (extract → validate → format), the right answer is almost always a workflow or prompt chain, not an autonomous agent. Pick an agent when the path depends on what is discovered along the way (debugging, research, open-ended coding).</div>
+
+<div class="qgame" id="game-ag-when" data-game="ag-when" data-engine="sort">
+  <div class="qg-head"><div><span class="qg-tag">Game · Workflows vs agents</span><h4>Recipe or chef?</h4></div><span class="qg-stars" data-stars></span></div>
+  <p class="qg-analogy"><b>Everyday picture: a recipe versus a chef.</b> When you know the steps, a recipe (a workflow) is cheaper, faster and predictable. You hire a chef (an agent) when the meal depends on what you find in the fridge. And sometimes you just need one sandwich (a single call).</p>
+  <p>Choose the simplest thing that works for each task.</p>
+  <div class="qs" data-stage></div>
+  <script type="application/json" data-items>{"question": "What should you build?", "options": [{"id": "single", "label": "A single LLM call"}, {"id": "workflow", "label": "A workflow (your code sets the steps)"}, {"id": "agent", "label": "An agent (the model picks the path)"}], "items": [{"html": "Translate a product description into French.", "answer": "single", "why": "One input, one output, no steps to coordinate."}, {"html": "For every invoice: extract the fields → validate the totals → write them to the database.", "answer": "workflow", "why": "Known, fixed steps. That's a prompt chain with checks in between, not an autonomous agent."}, {"html": "Fix a failing test in a codebase you've never seen.", "answer": "agent", "why": "The path depends on what's discovered along the way: which files, what the error means, what to try next."}, {"html": "Summarise a two-page memo.", "answer": "single", "why": "A single call does this well. Anything more adds cost and latency for nothing."}, {"html": "Research which of three vendors meets our compliance rules, reading whatever documents it takes.", "answer": "agent", "why": "Open-ended research: you can't list the steps in advance."}, {"html": "Classify each support email, then answer it with the billing, technical or sales template.", "answer": "workflow", "why": "Classify, then route: a fixed routing workflow."}, {"html": "Write an outline, then a draft from the outline, then an edit pass on the draft.", "answer": "workflow", "why": "Prompt chaining: each step's output feeds the next, in an order you already know."}, {"html": "Find out why the nightly job fails only on Tuesdays.", "answer": "agent", "why": "Debugging is the classic agent task: the next step depends on the last finding."}, {"html": "Answer “What's our refund policy?” using the policy document provided.", "answer": "single", "why": "The answer is in the context you supply. One call."}], "perfect": "Exactly the exam lens: known steps → workflow; path depends on discoveries → agent; one step → single call."}</script>
+</div>
 
 <!-- ============================================================ -->
 <h2 id="patterns" data-nav="4. Five workflow patterns" data-keywords="prompt chaining routing parallelization sectioning voting orchestrator workers evaluator optimizer">4. The five workflow patterns</h2>
@@ -462,6 +490,14 @@ def write_with_review(task: str, criteria: str, max_rounds: int = 3) -&gt; str:
 <li><strong>Every loop is bounded</strong> (<code>max_rounds</code>), and every gate fails loudly.</li>
 </ul></div>
 
+<div class="qgame" id="game-ag-pattern" data-game="ag-pattern" data-engine="sort">
+  <div class="qg-head"><div><span class="qg-tag">Game · Workflow patterns</span><h4>Name that pattern</h4></div><span class="qg-stars" data-stars></span></div>
+  <p class="qg-analogy"><b>Everyday picture: a restaurant kitchen.</b> Dishes move down a line of stations (chaining); a host seats each guest in the right section (routing); several cooks prep at once or taste-test a sauce (parallelization); a head chef assigns tasks once they see the order (orchestrator–workers); and the chef sends plates back until they're right (evaluator–optimizer).</p>
+  <p>Match each system to one of the five workflow patterns.</p>
+  <div class="qs" data-stage></div>
+  <script type="application/json" data-items>{"question": "Which pattern is this?", "options": [{"id": "chain", "label": "Prompt chaining"}, {"id": "route", "label": "Routing"}, {"id": "parallel", "label": "Parallelization"}, {"id": "orch", "label": "Orchestrator–workers"}, {"id": "eval", "label": "Evaluator–optimizer"}], "items": [{"html": "Outline → draft → edit, with a check that the outline has five sections before drafting starts.", "answer": "chain", "why": "A fixed sequence where each step feeds the next, with a gate in between."}, {"html": "Each customer message is classified as billing, technical or sales, then handled by a specialised prompt.", "answer": "route", "why": "Classify first, then hand off to the right specialist."}, {"html": "Easy questions go to a small, fast model; hard ones go to a large model.", "answer": "route", "why": "Routing by difficulty is a classic cost saver."}, {"html": "A pull request is reviewed for security, performance and style at the same time, by three separate prompts.", "answer": "parallel", "why": "Sectioning: independent sub-tasks run at once."}, {"html": "The same “is this harmful?” check runs five times, and the majority answer wins.", "answer": "parallel", "why": "Voting: the same task N times, then take the majority."}, {"html": "A lead model decides which sub-questions to research, then hands each one to a helper.", "answer": "orch", "why": "Like parallelization, but the model decides the sub-tasks at runtime."}, {"html": "A change spans many files, but which files isn't known until the model looks.", "answer": "orch", "why": "The work can't be split in advance, so an orchestrator plans it as it goes."}, {"html": "A translation is graded against a rubric by a second call and redone (up to 3 times) until it passes.", "answer": "eval", "why": "Generate, grade against explicit criteria, repeat, and keep it bounded."}, {"html": "Code is generated, checked against the spec, and the failures are fed back, for at most 5 rounds.", "answer": "eval", "why": "The evaluator–optimizer loop, with a round limit."}], "perfect": "All five patterns, recognised. They compose freely: a router can hand work to an orchestrator whose workers use evaluator loops."}</script>
+</div>
+
 <!-- ============================================================ -->
 <h2 id="multi-agent" data-nav="5. Multi-agent systems" data-keywords="subagents orchestrator lead agent delegation context isolation handoff parallel">5. Multi-agent systems</h2>
 <p>A multi-agent system is orchestrator–workers where the workers are themselves agents: each subagent runs its own loop with its own tools and <strong>its own context window</strong>. The lead agent plans, delegates, and combines condensed results.</p>
@@ -600,6 +636,17 @@ if __name__ == "__main__":
 <tr><td><strong>Subagent isolation</strong></td><td>Push exploration into a subagent; only its summary comes back</td><td>The multi-agent pattern above</td></tr>
 </tbody></table></div>
 <div class="callout tip"><span class="title">💡 Rule of thumb</span>Find the <em>smallest set of high-signal tokens</em> that lets the model do the next step well. More context isn't better context.</div>
+
+<div class="qgame" id="game-ag-pack" data-game="ag-pack">
+  <div class="qg-head"><div><span class="qg-tag">Game · Context engineering</span><h4>Pack the carry-on</h4></div><span class="qg-stars" data-stars></span></div>
+  <p class="qg-analogy"><b>Everyday picture: packing a carry-on bag.</b> Space is limited, so you take what you need for this trip and leave the rest at home, knowing where to find it. The context window is the agent's carry-on: a finite attention budget, not a storage unit.</p>
+  <p><b>Your mission:</b> the agent's next job is <i>“Fix the failing login test in auth/session.ts”</i>. Pack its context window (10,000 tokens in this game) with what helps most. Click items to pack or unpack them.</p>
+  <div class="pk-meter" aria-hidden="true"><div class="pk-fill" data-fill></div></div>
+  <p class="qg-stats" data-used aria-live="polite"></p>
+  <div class="pk-list" data-pack></div>
+  <div class="btnrow"><button class="btn" type="button" data-check>Check my packing</button></div>
+  <p class="pm-result wait" data-msg aria-live="polite"></p>
+</div>
 
 <!-- ============================================================ -->
 <h2 id="memory" data-nav="7. Memory" data-keywords="memory short term long term memory tool CLAUDE.md episodic semantic procedural">7. Memory: what survives the context window</h2>
@@ -751,5 +798,7 @@ if __name__ == "__main__":
 </article>
 </main>
 <script src="../assets/site.js"></script>
+<script src="../assets/games.js?v=1"></script>
+<script src="../assets/ai-games.js?v=1"></script>
 </body>
 </html>

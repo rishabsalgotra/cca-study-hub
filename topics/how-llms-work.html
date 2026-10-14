@@ -7,6 +7,7 @@
 <link rel="canonical" href="https://www.quantumcompute.world/topics/how-llms-work.html">
 <meta name="description" content="The step-by-step journey from a user's text to an LLM response: chat templates, tokenization, embeddings, positions, attention, transformer layers, logits, sampling, the autoregressive loop, KV cache and stop conditions.">
 <link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/games.css?v=1">
 </head>
 <body data-root=".." data-topic="how-llms-work">
 <main>
@@ -19,6 +20,17 @@
   <span class="pill"><b>Why it matters</b> explains cost, latency, limits &amp; failure modes</span>
   <span class="pill">≈ 45–60 min read</span>
 </div>
+
+<nav class="qarcade" aria-labelledby="arcade-title">
+  <div class="qa-head"><div><span class="qg-tag">Learn by playing</span><h3 id="arcade-title">Arcade: 4 mini-games</h3></div><span class="qa-total" data-arcade-total>0 / 12 stars</span></div>
+  <p class="qnote">Each game turns one idea from this page into something you can try, paired with an everyday comparison. They sit inside the sections they teach; jump to any of them here. Stars are saved in this browser.</p>
+  <ol class="qa-list">
+    <li><a href="#game-llm-bpe" data-arcade="llm-bpe"><b>Build a tokenizer</b><span>Tokenization · texting shorthand</span></a></li>
+    <li><a href="#game-llm-attn" data-arcade="llm-attn"><b>What does it refer to?</b><span>Attention · reading with a highlighter</span></a></li>
+    <li><a href="#game-llm-temp" data-arcade="llm-temp"><b>The creativity thermostat</b><span>Sampling · temperature or something else?</span></a></li>
+    <li><a href="#game-llm-gen" data-arcade="llm-gen"><b>Be the LLM</b><span>Generation loop · your phone's autocomplete</span></a></li>
+  </ol>
+</nav>
 
 <!-- ============================================================ -->
 <h2 id="journey" data-nav="1. The journey at a glance" data-keywords="overview pipeline steps">1. The journey at a glance</h2>
@@ -88,6 +100,20 @@ messages: [ {role: "user", content: "What is the capital of France?"} ]
 <tr><td>Arithmetic on long numbers can be shaky</td><td>Numbers are split into irregular chunks</td></tr>
 <tr><td>Different models give different token counts for the same text</td><td>Each model family has its own tokenizer. Use the API's token-counting endpoint, or <code>usage</code> in responses, for exact counts.</td></tr>
 </tbody></table></div>
+
+<div class="qgame" id="game-llm-bpe" data-game="llm-bpe">
+  <div class="qg-head"><div><span class="qg-tag">Game · Tokenization</span><h4>Build a tokenizer</h4></div><span class="qg-stars" data-stars></span></div>
+  <p class="qg-analogy"><b>Everyday picture: texting shorthand.</b> People who type “the” and “ing” all day start treating them as single units. Byte-pair encoding does that automatically: it keeps merging the most frequent neighbouring pair of symbols into a new symbol, and the list of merges becomes the vocabulary.</p>
+  <p><b>Your mission:</b> below is a tiny training corpus (the number shows how often each word appears). Every word starts as single characters. Choose 5 merges to shrink the corpus to as few tokens as possible.</p>
+  <div class="bp-corpus" data-corpus></div>
+  <div class="qg-stats">Merges used <b data-merges>0 / 5</b> · Corpus size <b data-total>79</b> tokens</div>
+  <p class="qs-q">Most frequent neighbouring pairs. Click one to merge it:</p>
+  <div class="btnrow" data-pairs></div>
+  <p class="qs-q">Your vocabulary (learned merges, in order):</p>
+  <div class="bp-vocab" data-vocab></div>
+  <p class="pm-result wait" data-msg aria-live="polite"></p>
+  <div data-try></div>
+</div>
 
 <!-- ============================================================ -->
 <h2 id="embed" data-nav="4. Embeddings (IDs → vectors)" data-keywords="embedding matrix vector d_model lookup semantic">4. Step 3 — Embeddings: token IDs → vectors</h2>
@@ -169,6 +195,16 @@ Prompt of 5 tokens → matrix X of shape [5 × 768]</code></pre>
 <li><strong>Cost:</strong> every token is compared with every earlier token, so attention compute grows <strong>quadratically</strong> with sequence length (O(n²)). Long contexts are expensive.</li>
 </ul>
 <div class="callout tip"><span class="title">💡 Connects to "lost in the middle"</span>Attention is a learned, soft weighting, not perfect lookup. In very long prompts, models tend to use information at the start and end more reliably than in the middle. That's why you put key instructions and facts at the beginning or end, under clear headers.</div>
+
+<div class="qgame" id="game-llm-attn" data-game="llm-attn">
+  <div class="qg-head"><div><span class="qg-tag">Game · Self-attention</span><h4>What does it refer to?</h4></div><span class="qg-stars" data-stars></span></div>
+  <p class="qg-analogy"><b>Everyday picture: reading with a highlighter.</b> When you reach a word like “it” or “tired”, your eyes jump back to the word it's about. Attention is a learned, soft version of that glance back, and it can only look backwards: later words are hidden by the causal mask.</p>
+  <div class="qg-stats">Sentence <b data-round>1 / 6</b> · Score <b data-score>0</b></div>
+  <p class="qs-q" data-q></p>
+  <div class="at-sent" data-sent></div>
+  <p class="pm-result wait" data-msg aria-live="polite"></p>
+  <div class="btnrow"><button class="btn" type="button" data-next hidden>Next sentence</button></div>
+</div>
 
 <!-- ============================================================ -->
 <h2 id="transformer" data-nav="7. Transformer block &amp; layers" data-keywords="transformer block MLP feed-forward residual stream layer norm MoE">7. Step 5b — The transformer block, stacked N times</h2>
@@ -272,6 +308,14 @@ probs  = softmax(logits / T)   all positive, sum to 1</code></pre>
 
 <div class="callout warn"><span class="title">Determinism caveat</span>Low temperature makes outputs <em>much</em> more consistent, but even temperature 0 isn't strictly guaranteed to be bit-for-bit identical across calls on large-scale serving infrastructure. For reliability, design for validation and retries rather than assuming identical outputs.</div>
 
+<div class="qgame" id="game-llm-temp" data-game="llm-temp" data-engine="sort">
+  <div class="qg-head"><div><span class="qg-tag">Game · Sampling</span><h4>The creativity thermostat</h4></div><span class="qg-stars" data-stars></span></div>
+  <p class="qg-analogy"><b>Everyday picture: a thermostat for creativity.</b> Turn it down when you need an accountant: precise, consistent, predictable. Turn it up for a brainstorming session. But some problems aren't about temperature at all, and no setting will fix them.</p>
+  <p>For each task, choose the setting that fits best, or spot when the fix is something else entirely.</p>
+  <div class="qs" data-stage></div>
+  <script type="application/json" data-items>{"question": "Which setting fits this task?", "options": [{"id": "low", "label": "Low temperature (focused)"}, {"id": "high", "label": "Higher temperature (varied)"}, {"id": "other", "label": "Temperature won't fix it"}], "items": [{"html": "Extract the invoice number, date and total from 10,000 scanned invoices into JSON.", "answer": "low", "why": "Extraction has one right answer. Low temperature keeps the model on its top choice every time."}, {"html": "Brainstorm 20 possible names for a new coffee shop.", "answer": "high", "why": "You want variety. A flatter distribution lets less-obvious tokens through."}, {"html": "Classify each support ticket into one of five categories.", "answer": "low", "why": "Classification should be consistent: the same ticket should get the same label."}, {"html": "Write five different subject lines for an A/B test.", "answer": "high", "why": "The point is diversity between the options, so let the model explore."}, {"html": "The JSON output sometimes misses a required field.", "answer": "other", "why": "Use structured outputs (constrained decoding against a schema). It masks out tokens that would break the format, so the structure is guaranteed. Lowering the temperature only makes failures rarer."}, {"html": "Convert SQL from one database dialect to another.", "answer": "low", "why": "Translating code has a correct target. Keep it focused."}, {"html": "The model confidently states the wrong opening hours for your store.", "answer": "other", "why": "That's missing knowledge, not randomness. Give it the facts (retrieval or a tool) and ask it to answer from them."}, {"html": "Write a bedtime story with a surprising twist.", "answer": "high", "why": "Creative writing benefits from a less predictable choice of words."}, {"html": "A regression test needs exactly the same output on every single run.", "answer": "other", "why": "Even temperature 0 isn't guaranteed to be bit-for-bit identical on large-scale serving. Design for validation (check the output's properties) rather than exact equality."}], "perfect": "Perfect: low for one-right-answer tasks, higher for variety, and other tools when the problem isn't randomness."}</script>
+</div>
+
 <!-- ============================================================ -->
 <h2 id="autoregressive" data-nav="10. Generation loop &amp; KV cache" data-keywords="autoregressive KV cache prefill decode TTFT latency streaming">10. Step 8 — The generation loop, KV cache, prefill vs decode</h2>
 <p>One forward pass produces <strong>one token</strong>. To write a reply, the model loops:</p>
@@ -311,6 +355,22 @@ probs  = softmax(logits / T)   all positive, sum to 1</code></pre>
 <tr><td>The prompt plus output hit the model's context window</td><td><code>model_context_window_exceeded</code></td></tr>
 </tbody></table></div>
 <p>So <code>stop_reason</code> isn't something the model "decides to say". It's the server reporting <em>which stop condition fired</em>. Your agent loop branches on it (see <a href="claude-code.html#loop">the agentic loop</a>).</p>
+
+<div class="qgame" id="game-llm-gen" data-game="llm-gen">
+  <div class="qg-head"><div><span class="qg-tag">Game · Generation loop</span><h4>Be the LLM</h4></div><span class="qg-stars" data-stars></span></div>
+  <p class="qg-analogy"><b>Everyday picture: your phone's autocomplete.</b> It suggests the next word, you tap one, and it suggests again. An LLM does exactly that, one token at a time, until something tells it to stop. What that “something” was is the <code>stop_reason</code> the API returns.</p>
+  <div class="gn-req">
+    <div><span>User</span>What's the capital of France? Put the answer in &lt;answer&gt; tags.</div>
+    <div><span>max_tokens</span>6</div>
+    <div><span>stop_sequences</span>["&lt;/answer&gt;"]</div>
+  </div>
+  <div class="gn-out" data-out aria-live="polite"></div>
+  <div class="qg-stats">Tokens generated <b data-count>0 / 6</b> · Endings found <span class="gn-ends" data-endings></span></div>
+  <p class="qnote" data-work></p>
+  <div class="gn-cands" data-cands></div>
+  <div class="btnrow"><button class="gbtn alt" type="button" data-sample>Sample for me</button></div>
+  <p class="pm-result wait" data-msg aria-live="polite"></p>
+</div>
 
 <!-- ============================================================ -->
 <h2 id="detok" data-nav="12. Detokenize, stream &amp; tool calls" data-keywords="detokenize streaming tool_use parse JSON structured output">12. Step 10 — Detokenizing, streaming and tool calls</h2>
@@ -507,5 +567,7 @@ probs  = softmax(logits / T)   all positive, sum to 1</code></pre>
 })();
 </script>
 <script src="../assets/site.js"></script>
+<script src="../assets/games.js?v=1"></script>
+<script src="../assets/ai-games.js?v=1"></script>
 </body>
 </html>
