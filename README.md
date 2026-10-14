@@ -31,11 +31,15 @@ cca-site/
 
 1. `cp topics/_template.html topics/<id>.html`, then set `data-topic="<id>"` on `<body>`.
 2. Write content. Each `<h2 id="...">` automatically becomes a sidebar entry and a TOC entry.
-3. In `assets/site.js`, add an entry to `TOPICS` with `ready: true` and a `group` id from `GROUPS`
-   (Quantum Computing, AI, Claude Certification, Cloud Computing, Crypto & Blockchain).
-   Menu order, home-page cards, search filters and prev/next links follow `GROUPS` automatically.
+3. In `assets/site.js`, add an entry to `TOPICS` with `ready: true`, a `group` id from `GROUPS`
+   (Quantum Computing, AI, Claude Certification, Cloud Computing, Crypto & Blockchain), an `icon` name from `ICONS`,
+   a one-line `blurb`, and the `sections` / `quiz` counts shown on the home page cards.
+   Menu order, home-page cards, search filters and prev/next links follow `GROUPS` automatically
+   (each `GROUPS` entry has an `icon` too; areas are collapsible menu headers).
 4. Rebuild the search index: `python3 tools/build_search_index.py`.
 
 Code samples for the AI topics (3–5) and Programmable Money (8) live in `examples/` (each folder has a README, tests and a `build.py` that inlines the code into the page).
+
+Design system: `assets/style.css` defines light/dark tokens on `:root` (Geist / Geist Mono / Instrument Serif from Google Fonts); page themes such as `tps.css` override tokens only. Callout titles get a matching line icon automatically, so don't put emoji in them.
 
 Components available: `.callout.exam | .trap | .tip | .warn`, `.table-wrap > table`, `.grid > .card`, `.precedence` (numbered list), `.diagram` (inline SVG; add `class="anim" data-still="secs"` to an SVG with SMIL animations to get a play/pause button), and `.quiz` (set `data-answer`).

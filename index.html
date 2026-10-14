@@ -5,46 +5,130 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Quantum Computing</title>
 <meta name="description" content="Quantum Computing: interactive study notes on quantum computing basics, plus AI architecture, Claude Certified Architect exam prep, and enterprise architecture topics.">
+<meta name="theme-color" content="#fbfbfa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0b0f" media="(prefers-color-scheme: dark)">
 <link rel="canonical" href="https://www.quantumcompute.world/">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body data-root="." data-topic="home">
 <main>
 <article class="content">
-  <div class="eyebrow">quantumcompute.world</div>
-  <h1>Quantum Computing</h1>
-  <p class="lede">Interactive study notes, organised by topic. Start with quantum computing basics (qubits, superposition, entanglement and algorithms, with demos you can play with), then explore AI architecture and enterprise systems. Use the menu to jump between topics and sections, and tick sections off as you review them. Progress is saved in this browser.</p>
 
-  <a class="card" href="topics/quantum-basics.html" style="margin:0 0 1.4rem">
-    <h4>⚛ Start here: Quantum Computing Basics</h4>
-    <p>From bits to qubits, the Bloch sphere, measurement, interference, gates, entanglement, error correction, algorithms, cryptography and hardware, with an in-browser circuit simulator.</p>
-  </a>
+  <section class="hero" aria-labelledby="hero-title">
+    <div>
+      <div class="hero-badge"><b>QC</b> quantumcompute.world · interactive study notes</div>
+      <h1 id="hero-title">Quantum computing &amp; AI, <em>from first principles.</em></h1>
+      <p class="lede">Learn qubits, superposition and entanglement with demos you can play with, then go on to AI architecture, Claude certification and enterprise systems. Tick off sections as you go. Progress is saved in this browser.</p>
+      <div class="hero-cta">
+        <a class="btn btn-lg" href="topics/quantum-basics.html">Start with Quantum Basics
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
+        <button class="btn btn-lg btn-ghost" type="button" data-open-search>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7.5"/><path d="m20.5 20.5-4.2-4.2"/></svg>
+          Search the notes <kbd>/</kbd></button>
+      </div>
+    </div>
 
-  <h3>Topics</h3>
-  <div class="grid" data-topic-cards></div>
+    <div class="hero-art" aria-hidden="true">
+      <svg viewBox="0 0 400 400" role="presentation">
+        <defs>
+          <radialGradient id="hs" cx="38%" cy="32%" r="75%">
+            <stop offset="0" style="stop-color: var(--surface)"/>
+            <stop offset=".7" style="stop-color: var(--surface-2)"/>
+            <stop offset="1" style="stop-color: var(--accent-soft)"/>
+          </radialGradient>
+          <linearGradient id="hg" x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0" stop-color="#7c5cff"/><stop offset="1" stop-color="#19c6e6"/>
+          </linearGradient>
+        </defs>
+        <g class="spin-b"><ellipse class="orbit" cx="200" cy="200" rx="190" ry="58" transform="rotate(28 200 200)"/>
+          <circle class="electron-accent" cx="367.8" cy="289.2" r="5"/></g>
+        <circle class="sphere" cx="200" cy="200" r="128"/>
+        <ellipse class="equator" cx="200" cy="200" rx="128" ry="36"/>
+        <line class="axis" x1="200" y1="56" x2="200" y2="344"/>
+        <line class="axis" x1="60" y1="200" x2="340" y2="200"/>
+        <text class="ket-lbl" x="200" y="42" text-anchor="middle">|0⟩</text>
+        <text class="ket-lbl" x="200" y="370" text-anchor="middle">|1⟩</text>
+        <text class="ket-lbl" x="352" y="205">|+⟩</text>
+        <g>
+          <ellipse cx="200" cy="104" rx="72" ry="16" fill="none" stroke="url(#hg)" stroke-width="1" stroke-dasharray="2 4" opacity=".7"/>
+          <line class="qvec" x1="200" y1="200" x2="272" y2="104">
+            <animate attributeName="x2" dur="9s" repeatCount="indefinite" values="272.0;269.5;262.4;250.9;236.0;218.6;200.0;181.4;164.0;149.1;137.6;130.5;128.0;130.5;137.6;149.1;164.0;181.4;200.0;218.6;236.0;250.9;262.4;269.5;272.0"/>
+            <animate attributeName="y2" dur="9s" repeatCount="indefinite" values="104.0;108.1;112.0;115.3;117.9;119.5;120.0;119.5;117.9;115.3;112.0;108.1;104.0;99.9;96.0;92.7;90.1;88.5;88.0;88.5;90.1;92.7;96.0;99.9;104.0"/>
+          </line>
+          <circle class="qhead" cx="272" cy="104" r="7">
+            <animate attributeName="cx" dur="9s" repeatCount="indefinite" values="272.0;269.5;262.4;250.9;236.0;218.6;200.0;181.4;164.0;149.1;137.6;130.5;128.0;130.5;137.6;149.1;164.0;181.4;200.0;218.6;236.0;250.9;262.4;269.5;272.0"/>
+            <animate attributeName="cy" dur="9s" repeatCount="indefinite" values="104.0;108.1;112.0;115.3;117.9;119.5;120.0;119.5;117.9;115.3;112.0;108.1;104.0;99.9;96.0;92.7;90.1;88.5;88.0;88.5;90.1;92.7;96.0;99.9;104.0"/>
+          </circle>
+        </g>
+        <circle class="electron" cx="200" cy="200" r="4.5"/>
+        <g class="spin-a"><ellipse class="orbit" cx="200" cy="200" rx="180" ry="44" transform="rotate(-24 200 200)"/>
+          <circle class="electron" cx="364.4" cy="126.8" r="4"/></g>
+      </svg>
+    </div>
+  </section>
 
-  <h3>Claude Certified Architect – Foundations exam</h3>
-  <p>The <b>AI</b> and <b>Claude Certification</b> topics double as preparation for Anthropic's architect exam.</p>
-  <div class="meta-row">
-    <span class="pill"><b>60</b> scenario MCQs</span>
-    <span class="pill"><b>120</b> minutes</span>
-    <span class="pill">Pass <b>720</b> / 1000</span>
+  <div class="home-stats" role="list">
+    <div class="home-stat" role="listitem"><b data-stat="topics">8</b><span>topics live</span></div>
+    <div class="home-stat" role="listitem"><b data-stat="sections">111</b><span>sections</span></div>
+    <div class="home-stat" role="listitem"><b data-stat="quiz">62</b><span>self-check questions</span></div>
+    <div class="home-stat" role="listitem"><b data-stat="reviewed">0</b><span>sections you've reviewed</span></div>
   </div>
-  <div class="table-wrap"><table>
-    <thead><tr><th>Domain</th><th>Weight</th><th>Covered in</th></tr></thead>
-    <tbody>
-      <tr><td>D1 · Agentic architecture &amp; orchestration</td><td>27%</td><td>Agentic Architecture · Harness Engineering · Claude Code (loop, subagents)</td></tr>
-      <tr><td>D2 · Claude Code configuration &amp; workflows</td><td>20%</td><td>Claude Code · Harness Engineering (hooks, permissions)</td></tr>
-      <tr><td>D3 · Prompt engineering &amp; structured output</td><td>20%</td><td>Prompt Engineering (soon)</td></tr>
-      <tr><td>D4 · Tool design &amp; MCP integration</td><td>18%</td><td>Tool Design &amp; MCP · Claude Code (MCP)</td></tr>
-      <tr><td>D5 · Context management &amp; reliability</td><td>15%</td><td>Harness Engineering · Agentic Architecture (context) · Context &amp; Reliability (soon)</td></tr>
-    </tbody>
-  </table></div>
+  <a class="continue" data-continue hidden href="#"></a>
 
-  <div class="callout tip"><span class="title">How to study with this site</span>
-    Read a topic, try its interactive demos, take the self-check quiz at the end, then re-read the "Exam lens" and "Trap" boxes. Most wrong answers come from those distractor patterns.</div>
+  <section class="home-section reveal" aria-labelledby="topics-title">
+    <div class="section-head">
+      <div><div class="eyebrow">Curriculum</div><h2 id="topics-title">Topics</h2></div>
+      <p>Five areas, one path. Every topic has diagrams, interactive demos and a quiz at the end.</p>
+    </div>
+    <div data-topic-cards>
+      <p><a href="topics/quantum-basics.html">Quantum Basics</a> · <a href="topics/how-llms-work.html">How LLMs Work</a> · <a href="topics/agentic-architecture.html">Agentic Architecture</a> · <a href="topics/tools-mcp.html">Tool Design &amp; MCP</a> · <a href="topics/harness-engineering.html">Harness Engineering</a> · <a href="topics/claude-code.html">Claude Code</a> · <a href="topics/tps-architecture.html">1K vs 1M TPS</a> · <a href="topics/programmable-money.html">Programmable Money</a></p>
+    </div>
+  </section>
 
-  <footer class="site">Quantum Computing · quantumcompute.world · personal study notes · not an official Anthropic resource</footer>
+  <section class="home-section reveal" aria-labelledby="exam-title">
+    <div class="section-head">
+      <div><div class="eyebrow">Exam prep</div><h2 id="exam-title">Claude Certified Architect – Foundations</h2></div>
+      <p>The <b>AI</b> and <b>Claude Certification</b> topics double as preparation for Anthropic's architect exam.</p>
+    </div>
+    <div class="exam-grid">
+      <div class="exam-facts">
+        <div class="fact"><b>60</b><span>scenario-based multiple-choice questions</span></div>
+        <div class="fact"><b>120 min</b><span>to complete the exam</span></div>
+        <div class="fact"><b>720<small style="font-size:.5em;color:var(--muted);letter-spacing:0"> / 1000</small></b><span>scaled score to pass</span></div>
+      </div>
+      <div class="blueprint">
+        <h3>Domain weighting <small>share of exam</small></h3>
+        <div class="bp-row"><div class="bp-name"><span>D1</span>Agentic architecture &amp; orchestration</div><div class="bp-w">27%</div>
+          <div class="bp-bar" style="--w:27"><i></i></div><div class="bp-cov">Agentic Architecture · Harness Engineering · Claude Code (loop, subagents)</div></div>
+        <div class="bp-row"><div class="bp-name"><span>D2</span>Claude Code configuration &amp; workflows</div><div class="bp-w">20%</div>
+          <div class="bp-bar" style="--w:20"><i></i></div><div class="bp-cov">Claude Code · Harness Engineering (hooks, permissions)</div></div>
+        <div class="bp-row"><div class="bp-name"><span>D3</span>Prompt engineering &amp; structured output</div><div class="bp-w">20%</div>
+          <div class="bp-bar" style="--w:20"><i></i></div><div class="bp-cov">Prompt Engineering (coming soon)</div></div>
+        <div class="bp-row"><div class="bp-name"><span>D4</span>Tool design &amp; MCP integration</div><div class="bp-w">18%</div>
+          <div class="bp-bar" style="--w:18"><i></i></div><div class="bp-cov">Tool Design &amp; MCP · Claude Code (MCP)</div></div>
+        <div class="bp-row"><div class="bp-name"><span>D5</span>Context management &amp; reliability</div><div class="bp-w">15%</div>
+          <div class="bp-bar" style="--w:15"><i></i></div><div class="bp-cov">Harness Engineering · Agentic Architecture (context) · Context &amp; Reliability (coming soon)</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="home-section reveal" aria-labelledby="method-title">
+    <div class="section-head">
+      <div><div class="eyebrow">Method</div><h2 id="method-title">How to study with this site</h2></div>
+    </div>
+    <ol class="method">
+      <li><h3>Read the topic</h3><p>Work through it section by section and mark each one as reviewed. The menu tracks how far you've got.</p></li>
+      <li><h3>Play with the demos</h3><p>Change the inputs in the simulators and animated diagrams until the idea makes sense.</p></li>
+      <li><h3>Check yourself</h3><p>Take the quiz at the end, then re-read the "Exam lens" and "Trap" boxes. Most wrong answers come from those distractor patterns.</p></li>
+    </ol>
+  </section>
+
+  <footer class="site home-foot">
+    <span>Quantum Computing · quantumcompute.world</span>
+    <span>Personal study notes · not an official Anthropic resource</span>
+  </footer>
 </article>
 </main>
 <script src="assets/site.js"></script>

@@ -9,7 +9,7 @@ body.tps {
   --link: #7dd3fc; --code-bg: #0c172b; --code-text: #d6e2f3;
   --ok: #34d399; --ok-soft: #0d2b27; --warn: #fbbf24; --warn-soft: #2b2412;
   --bad: #f87171; --bad-soft: #2f1820; --info: #a78bfa; --info-soft: #1d1a3d;
-  --violet: #a78bfa; --blue: #60a5fa; --pink: #f472b6;
+  --violet: #a78bfa; --blue: #60a5fa; --pink: #f472b6; --on-accent: #06121f; --border-strong: #34507f; --sidebar-bg: #0c1528;
   color-scheme: dark;
   background: radial-gradient(1100px 520px at 78% -140px, #15305e 0%, rgba(21, 48, 94, 0) 70%) no-repeat, var(--bg);
 }

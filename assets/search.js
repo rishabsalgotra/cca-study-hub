@@ -192,7 +192,7 @@
   const btn = document.createElement("button");
   btn.type = "button"; btn.className = "search-btn";
   btn.setAttribute("aria-label", "Search the site");
-  btn.innerHTML = `<span aria-hidden="true">⌕</span><span class="sb-label">Search</span><kbd>${isMac ? "⌘K" : "Ctrl K"}</kbd>`;
+  btn.innerHTML = `<span aria-hidden="true">${window.SiteIcon ? SiteIcon("search") : "⌕"}</span><span class="sb-label">Search notes…</span><kbd>${isMac ? "⌘K" : "Ctrl K"}</kbd>`;
   topbar.querySelector(".spacer").after(btn);
   btn.addEventListener("pointerenter", () => StaticProvider.load(), { once: true });
 
@@ -201,7 +201,7 @@
   overlay.innerHTML = `
     <div class="search-dialog" role="dialog" aria-modal="true" aria-label="Search the site">
       <div class="search-head">
-        <span class="search-icon" aria-hidden="true">⌕</span>
+        <span class="search-icon" aria-hidden="true">${window.SiteIcon ? SiteIcon("search") : "⌕"}</span>
         <input class="search-input" type="search" autocomplete="off" spellcheck="false" placeholder="Search topics, sections and text…"
           role="combobox" aria-expanded="true" aria-controls="search-results" aria-autocomplete="list">
         <button class="search-close" type="button" aria-label="Close search">Esc</button>
@@ -270,7 +270,7 @@
     for (const [tid, hs] of byTopic) {
       const t = topicById[tid] || { title: hs[0].page, icon: "•" };
       const g = groups.find((x) => x.id === t.group);
-      html += `<div class="sr-group"><div class="sr-title">${t.icon} ${esc(t.title)}${g ? ` <span>${esc(g.title)}</span>` : ""}</div>`;
+      html += `<div class="sr-group"><div class="sr-title">${window.SiteIcon && t.icon !== "•" ? SiteIcon(t.icon) : ""}${esc(t.title)}${g ? ` <span>${esc(g.title)}</span>` : ""}</div>`;
       for (const h of hs.slice(0, 6)) {
         const [path, hash] = h.url.split("#");
         const href = `${ROOT}/${path}?hl=${hl}${hash ? "#" + hash : ""}`;
