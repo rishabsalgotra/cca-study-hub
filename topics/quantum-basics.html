@@ -7,7 +7,7 @@
 <meta name="description" content="Quantum computing from first principles: qubits, superposition, the Bloch sphere, measurement, interference, gates, entanglement, circuits, noise and error correction, algorithms, cryptography, hardware, and your first Qiskit program, with interactive demos.">
 <link rel="canonical" href="https://www.quantumcompute.world/topics/quantum-basics.html">
 <link rel="stylesheet" href="../assets/style.css">
-<link rel="stylesheet" href="../assets/quantum.css">
+<link rel="stylesheet" href="../assets/quantum.css?v=6">
 </head>
 <body data-root=".." data-topic="quantum-basics">
 <main>
@@ -19,9 +19,24 @@
 <div class="meta-row">
   <span class="pill"><b>19</b> sections</span>
   <span class="pill"><b>4</b> interactive demos</span>
+  <span class="pill"><b>7</b> mini-games</span>
   <span class="pill"><b>4</b> animated diagrams</span>
   <span class="pill">≈ 90 min read</span>
 </div>
+
+<nav class="qarcade" aria-labelledby="arcade-title">
+  <div class="qa-head"><div><span class="qg-tag">Learn by playing</span><h3 id="arcade-title">Quantum arcade: 7 mini-games</h3></div><span class="qa-total" data-arcade-total>0 / 21 stars</span></div>
+  <p class="qnote">Each game turns one idea into something you can try yourself, paired with an everyday comparison. The games sit inside the sections they teach; jump to any of them from here. Stars are saved in this browser.</p>
+  <ol class="qa-list">
+    <li><a href="#game-mystery" data-arcade="mystery"><b>Mystery qubit</b><span>Measurement · polarised sunglasses</span></a></li>
+    <li><a href="#game-maze" data-arcade="maze"><b>Gate maze</b><span>Gates · a Rubik's cube for one qubit</span></a></li>
+    <li><a href="#game-memory" data-arcade="memory"><b>Rice on the chessboard</b><span>Many qubits · exponential growth</span></a></li>
+    <li><a href="#game-chsh" data-arcade="chsh"><b>The impossible quiz show</b><span>Entanglement · beat the classical limit</span></a></li>
+    <li><a href="#game-qec" data-arcade="qec"><b>Bit-flip detective</b><span>Error correction · a phone number passed between friends</span></a></li>
+    <li><a href="#game-grover" data-arcade="grover"><b>Find the prize</b><span>Grover search · a shuffled phone book</span></a></li>
+    <li><a href="#game-bb84" data-arcade="bb84"><b>Catch the spy</b><span>Quantum key distribution · a tamper-evident seal</span></a></li>
+  </ol>
+</nav>
 
 <!-- ============================================================ -->
 <h2 id="why" data-nav="1. Why quantum computing?" data-keywords="motivation classical limits what is quantum computing good for">1. Why quantum computing?</h2>
@@ -187,6 +202,20 @@
 </ul>
 <div class="callout"><span class="title">Why this matters for algorithms</span>Since one run returns only n classical bits from n qubits, a useful quantum algorithm must end in a state where the <em>answer</em> has high probability. Simply "computing all answers in parallel" and reading one at random is useless. Interference (next section) is what makes the right answer likely.</div>
 
+<div class="qgame" id="game-mystery" data-game="mystery">
+  <div class="qg-head"><div><span class="qg-tag">Game · Measurement</span><h4>Mystery qubit</h4></div><span class="qg-stars" data-stars></span></div>
+  <p class="qg-analogy"><b>Everyday picture: polarised sunglasses.</b> Vertically polarised light passes a vertical filter every time, but through a diagonal filter it gets through only half the time, at random. Choosing which filter to look through is choosing a <em>measurement basis</em>.</p>
+  <p><b>Your mission:</b> a machine prepares the same secret state every time: <span class="ket">|0⟩</span>, <span class="ket">|1⟩</span>, <span class="ket">|+⟩</span> or <span class="ket">|−⟩</span>. Each measurement uses a fresh copy. Name the state using as few measurements as possible.</p>
+  <div class="btnrow">
+    <button class="btn" type="button" data-measure="z">Measure in 0 / 1</button>
+    <button class="btn" type="button" data-measure="x">Measure in + / −</button>
+  </div>
+  <div class="qg-log" data-log aria-live="polite"></div>
+  <div class="qg-guess"><span>It's…</span><button class="gbtn" type="button" data-guess="0">|0⟩</button><button class="gbtn" type="button" data-guess="1">|1⟩</button><button class="gbtn" type="button" data-guess="+">|+⟩</button><button class="gbtn" type="button" data-guess="-">|−⟩</button></div>
+  <p class="pm-result wait" data-msg aria-live="polite">Make some measurements, then name the state.</p>
+  <div class="btnrow"><button class="gbtn alt" type="button" data-new>New secret state</button></div>
+</div>
+
 <!-- ============================================================ -->
 <h2 id="interference" data-nav="6. Phase & interference" data-keywords="interference phase mach zehnder constructive destructive hadamard">6. Phase and interference: the real source of power</h2>
 <p>Amplitudes add like waves. Two contributions with the same phase <strong>add up</strong> (constructive interference); with opposite phases they <strong>cancel</strong> (destructive interference). Quantum algorithms are choreographed so that paths leading to wrong answers cancel.</p>
@@ -271,6 +300,23 @@
 <li><strong>Useful identities:</strong> H·H = I, X·X = I, HZH = X, HXH = Z, S² = Z, T² = S, T⁸ = I.</li>
 </ul>
 
+<div class="qgame" id="game-maze" data-game="maze">
+  <div class="qg-head"><div><span class="qg-tag">Game · Gates</span><h4>Gate maze</h4></div><span class="qg-stars" data-stars></span></div>
+  <p class="qg-analogy"><b>Everyday picture: a Rubik's cube.</b> Every gate is a rotation, every rotation can be undone, and there are clever shortcuts. The six dots are the six "poles" of the Bloch sphere from section 4. Reach the target in as few moves as possible.</p>
+  <p class="qg-level-text" data-level-text></p>
+  <div class="qgrid">
+    <svg class="qg-board" data-board viewBox="0 0 300 270" role="img" aria-label="Bloch sphere map with six states: |0⟩ at the top, |1⟩ at the bottom, and |+⟩, |−⟩, |+i⟩, |−i⟩ around the equator."></svg>
+    <div class="qctrl">
+      <div class="qg-stats">Level <b data-level>1</b> of 8 · Moves <b data-moves>0</b> · Fewest possible <b data-par>1</b></div>
+      <div class="btnrow" data-gates></div>
+      <div class="qg-seq" data-seq></div>
+      <div class="btnrow"><button class="gbtn alt" type="button" data-undo>Undo</button><button class="gbtn alt" type="button" data-restart>Restart level</button><button class="btn" type="button" data-next hidden>Next level</button></div>
+      <p class="pm-result wait" data-msg aria-live="polite"></p>
+      <div class="qg-levels" data-levels aria-label="Levels"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ============================================================ -->
 <h2 id="multi" data-nav="8. Many qubits" data-keywords="tensor product state space exponential 2^n memory simulation">8. Many qubits: the exponential state space</h2>
 <p>Two qubits have four basis states, <span class="ket">|00⟩, |01⟩, |10⟩, |11⟩</span>, and a general two-qubit state needs four amplitudes. Every added qubit <strong>doubles</strong> the number of amplitudes: n qubits are described by 2ⁿ complex numbers. Combining independent qubits uses the <strong>tensor product</strong>, e.g. |0⟩ ⊗ |1⟩ = |01⟩.</p>
@@ -283,6 +329,26 @@
 <tr><td>50</td><td>≈ 1.1 × 10¹⁵</td><td>16 PiB: beyond most supercomputers</td></tr>
 <tr><td>300</td><td>≈ 2 × 10⁹⁰</td><td>More numbers than atoms in the observable universe (~10⁸⁰)</td></tr>
 </tbody></table></div>
+<div class="qgame" id="game-memory" data-game="memory">
+  <div class="qg-head"><div><span class="qg-tag">Game · Many qubits</span><h4>Rice on the chessboard</h4></div><span class="qg-stars" data-stars></span></div>
+  <p class="qg-analogy"><b>Everyday picture: the chessboard legend.</b> Put one grain of rice on the first square and double it on every square after. By square 64 you'd need more rice than the world has ever grown. Each extra qubit is one more square: it doubles the numbers a classical computer must store.</p>
+  <div class="qg-quiz">
+    <label for="mem-guess"><b>Guess first:</b> what's the largest number of qubits whose full state still fits in a laptop with 16 GB of memory?</label>
+    <div class="btnrow"><input id="mem-guess" class="qg-input" type="number" min="1" max="1000000" inputmode="numeric" placeholder="e.g. 1000"><button class="btn" type="button" data-check>Check my guess</button></div>
+    <p class="pm-result wait" data-msg aria-live="polite">Most people guess in the thousands or millions.</p>
+  </div>
+  <div class="qctrl">
+    <label for="mem-n">Number of qubits <output data-n-out>10</output><input type="range" id="mem-n" min="1" max="100" step="1" value="10"></label>
+  </div>
+  <div class="qg-mem">
+    <div><span>Amplitudes to store (2ⁿ)</span><b data-amps></b></div>
+    <div><span>Memory (16 bytes each)</span><b data-bytes></b></div>
+    <div><span>That's about</span><b data-compare></b></div>
+  </div>
+  <div class="qg-scale" data-scale aria-hidden="true"><div class="qg-scale-fill" data-fill></div></div>
+  <div class="btnrow"><button class="gbtn alt" type="button" data-jump="300">Jump to 300 qubits</button></div>
+</div>
+
 <div class="callout warn"><span class="title">Exponential state ≠ exponential output</span>2ⁿ amplitudes don't mean 2ⁿ answers you can read. Measurement returns just n bits. The exponential space is only useful when an algorithm uses structure (interference, periodicity) to concentrate probability on the answer. Also, many specific circuits can be simulated far more cheaply than the worst case (tensor networks, Clifford simulation), which is why "quantum advantage" claims are carefully contested.</div>
 
 <!-- ============================================================ -->
@@ -330,6 +396,26 @@
 <tr><td class="ket">|Ψ⁻⟩ = (|01⟩ − |10⟩)/√2</td><td>Always opposite (in every basis)</td><td>H, CNOT, then X and Z</td></tr>
 </tbody></table></div>
 <div class="callout trap"><span class="title">⚠️ Entanglement doesn't send messages</span>Measuring one qubit of a Bell pair instantly tells you the other's result, even light-years away, but you can't <em>choose</em> the outcome, so no information travels faster than light (the no-signalling theorem). Entanglement is a <em>resource</em>: it powers teleportation, superdense coding, quantum key distribution and the speed-ups of quantum algorithms. Bell-test experiments show its correlations can't be explained by hidden pre-agreed values.</div>
+
+<div class="qgame" id="game-chsh" data-game="chsh">
+  <div class="qg-head"><div><span class="qg-tag">Game · Entanglement</span><h4>The impossible quiz show</h4></div><span class="qg-stars" data-stars></span></div>
+  <p class="qg-analogy"><b>Everyday picture: two contestants in separate soundproof rooms.</b> They can agree on a plan beforehand, but once the game starts they can't communicate. Is there a plan that wins more than 75% of the time? Classically, no. With entangled qubits, yes.</p>
+  <p><b>Rules:</b> each round, a host hands Alice and Bob a random card, <b>0</b> or <b>1</b>. Each answers <b>0</b> or <b>1</b>. They <b>win</b> if their answers <b>match</b>, except when <b>both</b> get card 1: then their answers must <b>differ</b>. Set their plan below and play 1,000 rounds.</p>
+  <div class="qg-strat">
+    <div class="qg-player"><b>Alice's plan</b>
+      <div class="qg-rule"><span>Card 0 → answer</span><span class="seg" data-key="a0"><button type="button" data-v="0" aria-pressed="true">0</button><button type="button" data-v="1" aria-pressed="false">1</button></span></div>
+      <div class="qg-rule"><span>Card 1 → answer</span><span class="seg" data-key="a1"><button type="button" data-v="0" aria-pressed="true">0</button><button type="button" data-v="1" aria-pressed="false">1</button></span></div>
+    </div>
+    <div class="qg-player"><b>Bob's plan</b>
+      <div class="qg-rule"><span>Card 0 → answer</span><span class="seg" data-key="b0"><button type="button" data-v="0" aria-pressed="true">0</button><button type="button" data-v="1" aria-pressed="false">1</button></span></div>
+      <div class="qg-rule"><span>Card 1 → answer</span><span class="seg" data-key="b1"><button type="button" data-v="0" aria-pressed="true">0</button><button type="button" data-v="1" aria-pressed="false">1</button></span></div>
+    </div>
+  </div>
+  <div class="btnrow"><button class="btn" type="button" data-play="classical">Play 1,000 rounds with this plan</button><button class="btn" type="button" data-play="quantum" disabled>Give them entangled qubits</button></div>
+  <div class="qg-meter" aria-hidden="true"><div class="qg-meter-fill" data-fill></div><span class="qg-mark" style="left:75%"><i>75% classical limit</i></span><span class="qg-mark q" style="left:85.36%"><i>85% quantum</i></span></div>
+  <div class="table-wrap qg-rounds" data-rounds hidden></div>
+  <p class="pm-result wait" data-msg aria-live="polite">Try at least two different plans. The entangled option unlocks after that.</p>
+</div>
 
 <!-- ============================================================ -->
 <h2 id="lab" data-nav="10. Circuit lab" data-keywords="circuit simulator state vector interactive bell ghz grover">10. Circuit lab: build and simulate</h2>
@@ -399,6 +485,27 @@
 </tbody></table></div>
 <h3>Quantum error correction</h3>
 <p>You can't copy qubits, but you <em>can</em> spread one <strong>logical qubit</strong> across many <strong>physical qubits</strong> so that errors can be detected without measuring the encoded data. Helper qubits measure <em>parity checks</em> (syndromes), which reveal where an error happened but not the logical value.</p>
+<div class="qgame" id="game-qec" data-game="qec">
+  <div class="qg-head"><div><span class="qg-tag">Game · Error correction</span><h4>Bit-flip detective</h4></div><span class="qg-stars" data-stars></span></div>
+  <p class="qg-analogy"><b>Everyday picture: three friends passing on a phone number.</b> If one mishears a digit, the other two outvote them. The quantum twist: you're <em>not allowed to hear the number</em>, because looking would destroy the quantum state. You may only ask pairs of friends "do you two agree?"</p>
+  <p>A logical bit is stored as three copies (0 → 000, 1 → 111). Noise may flip one copy. Use the two parity checks to decide which qubit to fix.</p>
+  <div class="qg-code" data-code></div>
+  <div class="btnrow" data-fixes>
+    <button class="gbtn alt" type="button" data-fix="0">Fix qubit 1</button><button class="gbtn alt" type="button" data-fix="1">Fix qubit 2</button><button class="gbtn alt" type="button" data-fix="2">Fix qubit 3</button><button class="gbtn alt" type="button" data-fix="-1">No error</button>
+  </div>
+  <div class="qg-stats">Round <b data-round>1</b> of 8 · Correct calls <b data-score>0</b></div>
+  <p class="pm-result wait" data-msg aria-live="polite"></p>
+  <div class="btnrow"><button class="btn" type="button" data-next hidden>Next round</button></div>
+  <div class="qg-pl">
+    <label for="qec-p">Why it's worth it: chance each copy flips <output data-p-out>10%</output><input type="range" id="qec-p" min="1" max="50" step="1" value="10"></label>
+    <div class="readout">
+      <span>One copy</span><div class="pbar alt"><span data-b-phys></span></div><span class="qval" data-v-phys></span>
+      <span>Three copies + majority</span><div class="pbar ok"><span data-b-log></span></div><span class="qval" data-v-log></span>
+    </div>
+    <p class="qnote" data-p-note></p>
+  </div>
+</div>
+
 <figure class="diagram">
 <svg viewBox="0 0 760 200" role="img" aria-label="A grid of physical qubits, alternating data qubits and measurement qubits, forming a surface-code patch that encodes one logical qubit.">
   <g>
@@ -441,6 +548,19 @@
 </tbody></table></div>
 <p>Grover's algorithm in one picture: start with equal amplitudes on all N items; the <strong>oracle</strong> flips the sign of the marked item's amplitude; the <strong>diffusion</strong> step reflects every amplitude about the mean, which boosts the marked one. After ~(π/4)√N rounds, the marked item dominates. With N = 4 a single round is exact, as the "Grover finds |11⟩" preset in the circuit lab shows.</p>
 
+<div class="qgame" id="game-grover" data-game="grover">
+  <div class="qg-head"><div><span class="qg-tag">Game · Grover search</span><h4>Find the prize</h4></div><span class="qg-stars" data-stars></span></div>
+  <p class="qg-analogy"><b>Everyday picture: finding a name in a shuffled phone book.</b> With no order to exploit, you check entries one by one: on average half the book. Grover's algorithm needs only about √N "looks", by repeatedly nudging probability toward the right answer.</p>
+  <p><b>Round 1, the classical way:</b> a prize is behind one of 16 cards. Peek at cards one at a time.</p>
+  <div class="gb-cards" data-cards></div>
+  <p class="pm-result wait" data-cmsg aria-live="polite">Click cards to peek.</p>
+  <p><b>Round 2, the quantum way:</b> all 16 cards start in equal superposition. The <b>oracle</b> flips the sign of the prize's amplitude (one "look"). <b>Diffuse</b> reflects every amplitude about the average, which boosts the flipped one. Repeat, then measure at the right moment. Too many rounds and it overshoots.</p>
+  <div class="gb-bars" data-bars aria-hidden="true"></div>
+  <div class="qg-stats">Oracle calls <b data-calls>0</b> · Chance of the prize if you measure now <b data-p>6.3%</b></div>
+  <div class="btnrow"><button class="btn" type="button" data-op="oracle">1. Oracle: mark the prize</button><button class="btn" type="button" data-op="diffuse">2. Diffuse: amplify</button><button class="btn" type="button" data-op="measure">Measure</button><button class="gbtn alt" type="button" data-op="reset">Reset</button></div>
+  <p class="pm-result wait" data-qmsg aria-live="polite">The bars are the simulator's view of the amplitudes; a real quantum computer can't show them to you. You only get the measurement.</p>
+</div>
+
 <!-- ============================================================ -->
 <h2 id="crypto" data-nav="14. Quantum & cryptography" data-keywords="post-quantum cryptography PQC ML-KEM ML-DSA SLH-DSA FIPS 203 204 205 harvest now decrypt later RSA AES QKD">14. Quantum computing and cryptography</h2>
 <div class="table-wrap"><table>
@@ -455,6 +575,17 @@
 <li><strong>"Harvest now, decrypt later":</strong> adversaries can record encrypted traffic today and decrypt it once a capable quantum computer exists. Data that must stay secret for many years is already at risk, which is why migration is urgent even though no such machine exists yet.</li>
 <li><strong>Quantum key distribution (QKD)</strong> uses quantum physics itself (no-cloning) to detect eavesdropping on key exchange. It is a different, hardware-based approach from post-quantum algorithms.</li>
 </ul>
+
+<div class="qgame" id="game-bb84" data-game="bb84">
+  <div class="qg-head"><div><span class="qg-tag">Game · Quantum key distribution</span><h4>Catch the spy</h4></div><span class="qg-stars" data-stars></span></div>
+  <p class="qg-analogy"><b>Everyday picture: a tamper-evident seal.</b> You can't peel it off and stick it back without leaving a mark. A spy (Eve) can't copy a photon (no-cloning), and if she measures it through the wrong filter she scrambles it. That leaves errors Alice and Bob can spot.</p>
+  <p><b>How it works (BB84):</b> Alice sends photons, each carrying a random bit through a random filter, <b>+</b> or <b>×</b>. Bob measures each with his own random filter. Afterwards they announce only which <em>filters</em> they used, keep the bits where the filters matched, and compare those bits. You're the security officer: was someone listening?</p>
+  <div class="table-wrap bb-table" data-table></div>
+  <div class="qg-stats">Round <b data-round>1</b> of 5 · Correct verdicts <b data-score>0</b> · Errors in compared bits <b data-errors>0</b></div>
+  <div class="btnrow"><button class="btn" type="button" data-verdict="spy">Someone is listening</button><button class="btn" type="button" data-verdict="safe">The line is safe</button><button class="gbtn alt" type="button" data-more>Send 16 more photons</button></div>
+  <p class="pm-result wait" data-msg aria-live="polite"></p>
+  <div class="btnrow"><button class="btn" type="button" data-next hidden>Next round</button></div>
+</div>
 
 <!-- ============================================================ -->
 <h2 id="hardware" data-nav="15. Building qubits" data-keywords="hardware superconducting transmon trapped ion neutral atom photonic spin silicon topological DiVincenzo dilution refrigerator">15. Building qubits: the hardware</h2>
@@ -597,5 +728,6 @@ q_1: ─────┤ X ├
 </main>
 <script src="../assets/site.js"></script>
 <script src="../assets/quantum.js"></script>
+<script src="../assets/quantum-games.js?v=2"></script>
 </body>
 </html>
